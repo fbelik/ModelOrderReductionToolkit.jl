@@ -16,7 +16,7 @@ So the information with a `d`-dimensional representation given by
 
 `singular_values_information[d] = 1 - √ (σ_{d+1}^2 + ... + σ_N^2) / √ (σ_1^2 + ... + σ_N^2)`
 """
-function singular_values_information(σs::Vector{<:Real}) :: Vector{Float64}
+function singular_values_information(σs::AbstractVector) :: Vector{Float64}
     N = length(σs)
     res = zeros(N)
     for d in N-1:-1:1
@@ -51,7 +51,7 @@ Call with `P(b)` where `b` is a `m` vector or a matrix
 with `m` rows, projecting each column.
 """
 function pca_projector(
-    A::AbstractMatrix{Float64}, 
+    A::AbstractMatrix, 
     dim::Int=-1;
     info_tol::Float64=1e-2) :: Function
 
@@ -92,7 +92,7 @@ Call with `P(b)` where `b` is a `m` vector or a matrix
 with `m` rows, projecting each column.
 """
 function qr_projector(
-    A::AbstractMatrix{Float64}, 
+    A::AbstractMatrix, 
     dim::Int) :: Function
     
     # Perform QR with pivots and obtain pivoted columns
@@ -192,7 +192,7 @@ Call with `P(b)` where `b` is a `m` vector or a matrix
 with `m` rows, projecting each column.
 """
 function eim_projector(
-    A::AbstractMatrix{Float64}, 
+    A::AbstractMatrix, 
     dim::Int) :: Function
 
     # Perform LU

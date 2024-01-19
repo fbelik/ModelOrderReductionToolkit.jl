@@ -1,7 +1,5 @@
 using LinearAlgebra
 using JuMP
-#using HiGHS re-add if using HiGHs optimizer
-#using GLPK re-add if using GLPK optimizer
 using Tulip
 using NearestNeighbors
 using StaticArrays
@@ -23,6 +21,7 @@ struct SCM_Init
     tree_lookup::AbstractVector{Int}
     B::AbstractVector{Tuple{Float64,Float64}}
     C::AbstractVector{<:AbstractVector{<:Real}}
+    C_indices::Vector{Int}
     Mα::Int
     Mp::Int
     ϵ::AbstractFloat
@@ -32,6 +31,7 @@ struct SCM_Init
     σ_UBs::AbstractVector{Float64}
     spd::Bool
     R::Float64
+    optimizer::Any
 end
 
 function Base.show(io::Core.IO, scm::SCM_Init)
@@ -48,10 +48,10 @@ function Base.show(io::Core.IO, scm::SCM_Init)
 end
 
 """
-`initialize_SCM_SPD(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[noise=1]) = SCM_Init_SPD`
+`initialize_SCM_SPD(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[optimizer=Tulip.Optimizer,noise=1]) = SCM_Init`
 
 Method to initialize an `SCM_Init` object to perform the SCM
-on an affinely-parameter-dependent matrix
+on an affinely-parameter-dependent symmetric positive definite matrix
 `A(p) = ∑_{i=1}^QA θ_i(p) A_i` to compute a lower-bound
 approximation to the minimum singular value (or eigenvalue) of `A`.
 
@@ -73,15 +73,19 @@ and an index such that `A(p) = ∑_{i=1}^QA makeθAi(p,i) Ais[i]`
 `ϵ`: Relative difference allowed between upper-bound and lower-bound approximation
 on the parameter discretization (between 0 and 1)
 
+`optimizer`: Optimizer to pass into JuMP Model method for solving
+linear programs
+
 `noise`: Determines amount of printed information, between 0 and 2 with 0 being nothing
-displayed. Default 1.
+displayed; default 1
 """
 function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
-                        Ais::AbstractVector{<:AbstractMatrix},
+                        Ais::AbstractVector,
                         makeθAi::Function,
                         Mα::Int,
                         Mp::Int,
                         ϵ::AbstractFloat;
+                        optimizer=Tulip.Optimizer,
                         noise::Int=1)
     # Form data tree to search for nearest neighbors
     if typeof(param_disc) <: Vector
@@ -128,6 +132,7 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
     # Initialize upperbound sets
     p1 = tree.data[1]
     C = [p1]
+    C_indices = [1]
     make_UB(p) = begin
         A = zeros(size(Ais[1]))
         for i in eachindex(Ais)
@@ -142,20 +147,53 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
     σ, y = make_UB(p1)
     Y_UB = [y]
     σ_UBs = [σ]
-    scm =  SCM_Init(d, QA, tree, tree_lookup, B,
-                    C, Mα, Mp, ϵ, J, make_UB,
-                    Y_UB, σ_UBs, true, R)
+    scm =  SCM_Init(d, QA, tree, tree_lookup, B, C, 
+                    C_indices, Mα, Mp, ϵ, J, make_UB, 
+                    Y_UB, σ_UBs, true, R, optimizer)
     # Form upperbound set to ϵ accuracy
     form_upperbound_set!(scm, noise=noise)
     return scm
 end
 
+"""
+`initialize_SCM_Noncoercive(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[optimizer=Tulip.Optimizer,noise=1]) = SCM_Init`
+
+Method to initialize an `SCM_Init` object to perform the SCM
+on an affinely-parameter-dependent matrix
+`A(p) = ∑_{i=1}^QA θ_i(p) A_i` to compute a lower-bound
+approximation to the minimum singular value of `A`.
+
+Parameters:
+
+`param_disc`: Either a matrix where each column is a parameter
+value in the discretization, or a vector of parameter vectors.
+
+`Ais`: A vector of matrices, of the same dimension, used to construct
+the full matrix `A(p) = ∑_{i=1}^QA makeθAi(p,i) Ais[i]`
+
+`makeθAi(p,i)`: A function that takes in as input a parameter vector
+and an index such that `A(p) = ∑_{i=1}^QA makeθAi(p,i) Ais[i]`
+
+`Mα`: Stability constraint constant (a positive integer)
+
+`Mp`: Positivity constraint constant (a positive integer)
+
+`ϵ`: Relative difference allowed between upper-bound and lower-bound approximation
+on the parameter discretization (between 0 and 1)
+
+`optimizer`: Optimizer to pass into JuMP Model method for solving
+linear programs
+
+`noise`: Determines amount of printed information, between 0 and 2 with 0 being nothing
+displayed; default 1
+"""
 function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
                         Ais::AbstractVector{<:AbstractMatrix},
                         makeθAi::Function,
                         Mα::Int,
                         Mp::Int,
                         ϵ::AbstractFloat;
+                        optimizer=Tulip.Optimizer,
                         noise::Int=1)
     # Form data tree to search for nearest neighbors
     if typeof(param_disc) <: Vector
@@ -216,6 +254,7 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
     # Initialize upperbound sets
     p1 = tree.data[1]
     C = [p1]
+    C_indices = [1]
     make_UB(p) = begin
         A = zeros(size(Ais[1]))
         for i in eachindex(Ais)
@@ -225,23 +264,16 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
         σ = svdA.S[end]
         vec = svdA.V[:,end]
         y = JH(vec)
-        # For stability and feasibility
-        # Jσ = J(p, y)
-        # σ = max(σ,Jσ) # Should be min?
         return (σ ^ 2, y)
     end
     σ, y = make_UB(p1)
     Y_UB = [y]
     σ_UBs = [σ]
-    scm =  SCM_Init(d, QAA, tree, tree_lookup, B,
-                    C, Mα, Mp, ϵ, J, make_UB,
-                    Y_UB, σ_UBs, false, R)
+    scm =  SCM_Init(d, QAA, tree, tree_lookup, B, C, 
+                    C_indices, Mα, Mp, ϵ, J, make_UB, 
+                    Y_UB, σ_UBs, false, R, optimizer)
     # Form upperbound set to ϵ accuracy
-    # try
-        form_upperbound_set!(scm, noise=noise)
-    # catch e
-    #     println(e)
-    # end
+    form_upperbound_set!(scm, noise=noise)
     return scm
 end
 
@@ -253,11 +285,12 @@ Helper method that takes in an `SCM_Init_SPD` object and a parameter vector
 `σ_LB` to the minimum singular value of `A(p)` along with the associated vector `y_LB`.
 """
 function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector{<:Real})
-    # model = Model(HiGHS.Optimizer)
-    # model = Model(() -> GLPK.Optimizer(; want_infeasibility_certificates=false))
-    model = Model(Tulip.Optimizer)
-    set_attribute(model, "IPM_IterationsLimit", 1000000)
-    set_attribute(model, "IPM_TimeLimit", 20.0)
+    model = Model(scm_init.optimizer)
+    try
+        set_attribute(model, "IPM_IterationsLimit", 1000000)
+        set_attribute(model, "IPM_TimeLimit", 20.0)
+    catch e
+    end
     set_silent(model)
     @variable(model, y[1:scm_init.QA])
     # Bound constraints
@@ -274,7 +307,7 @@ function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector{<:Real})
         @constraint(model, scm_init.J(p_c,y) >= ub / scm_init.R)
     end
     # Positivity Constraints
-    p_idxs, _ = knn(scm_init.tree, p, scm_init.Mp)
+    p_idxs, _ = knn(scm_init.tree, p, scm_init.Mp, false, i -> (i in scm_init.C_indices[C_NN_idxs]))
     for p_idx in p_idxs
         p_nn = scm_init.tree.data[scm_init.tree_lookup[p_idx]]
         @constraint(model, scm_init.J(p_nn,y) >= 0)
@@ -283,37 +316,12 @@ function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector{<:Real})
     # Minimizer objective
     @objective(model, Min, scm_init.J(p,y))
     optimize!(model)
-    if length(scm_init.C) == 99
-        println(solution_summary(model))
-        println(model)
-        println(p)
-        println(objective_value(model))
-        println(typeof(objective_value(model)))
-        println([value(y[i]) for i in 1:scm_init.QA])
-        println(typeof([value(y[i]) for i in 1:scm_init.QA]))
-    end
-    if termination_status(model) != OPTIMAL || primal_status(model) != FEASIBLE_POINT
-        println(model)
-        println(p)
-        println(termination_status(model))
-        println(solution_summary(model))
-        # println(objective_value(model))
-        # println([value(y[i]) for i in 1:scm_init.QA])
-        error("Not optimal point or infeasible point")
+    if termination_status(model) != OPTIMAL
+        println("Warning: Linear Program Solution not optimal, possibly choose different optimizer")
+        σ_LB = 0.0
     else
         σ_LB = objective_value(model) * scm_init.R
     end
-    @assert termination_status(model) == OPTIMAL
-    @assert primal_status(model) == FEASIBLE_POINT
-    # σ_LB = objective_value(model)
-    # σ_LB = max(0.0, objective_value(model))
-    # if σ_LB < 0
-    #     println(model)
-    #     println(objective_value(model))
-    #     println([value(y[i]) for i in 1:scm_init.QA])
-    #     println(p)
-    #     println(termination_status(model))
-    # end
     y_LB = [value(y[i]) for i in 1:scm_init.QA] .* scm_init.R
     return (σ_LB, y_LB)
 end
@@ -333,9 +341,10 @@ function form_upperbound_set!(scm_init::SCM_Init; noise::Int=1)
         σ_UB_k = 0
         σ_LB_k = 0
         p_k = zeros(scm_init.d)
+        i_k = 0
         # Loop through every point in discretization to find 
         # arg max {p in discretization} (σ_UB(p) - σ_LB(p)) / σ_UB(p)
-        for p_disc in scm_init.tree.data
+        for (i,p_disc) in enumerate(scm_init.tree.data)
             if p_disc in scm_init.C
                 continue
             end
@@ -385,12 +394,13 @@ function form_upperbound_set!(scm_init::SCM_Init; noise::Int=1)
                 end 
                 ϵ_k = ϵ_disc
                 p_k = p_disc
+                i_k = i
                 σ_UB_k = σ_UB
                 σ_LB_k = σ_LB
             end
         end
         if noise >= 1
-            @printf("k = %d, ϵ_k = %.4e, σ_UB_k = %.2f, σ_LB_k = %.2f, p_k = %s\n", 
+            @printf("k = %d, ϵ_k = %.4e, σ_UB_k = %.4f, σ_LB_k = %.4f, p_k = %s\n", 
                     length(scm_init.C), ϵ_k, scm_init.spd ? σ_UB_k : sqrt(σ_UB_k), scm_init.spd ? σ_LB_k : sqrt(σ_LB_k), p_k)
         end
         if ϵ_k < scm_init.ϵ
@@ -398,18 +408,22 @@ function form_upperbound_set!(scm_init::SCM_Init; noise::Int=1)
                 @printf("Terminating on iteration k = %d with ϵ_k=%.4e\n",
                         length(scm_init.C),ϵ_k)
             end
-            break
+            return
         end
         # Update for next loop
         push!(scm_init.C, p_k)
+        push!(scm_init.C_indices, scm_init.tree.indices[i_k])
         σ_k, y_k = scm_init.make_UB(p_k)
         push!(scm_init.Y_UB, y_k)
         push!(scm_init.σ_UBs, σ_k)
     end
+    if noise >= 1
+        println("Warning: Looped through all of parameter discretization without meeting ϵ bound")
+    end
 end
 
 """
-`find_sigma_bounds(scm_init, p, [sigma_eps=0.5])`
+`find_sigma_bounds(scm_init, p, [sigma_eps=1.0])`
 
 Method that performs the online phase of SCM for the matrix
 `A(p) = ∑_{i=1}^QA θ_i(p) A_i` to compute lower and upper-bound
@@ -421,7 +435,7 @@ the minimum singular value is directly computed, appended to the
 scm_init's upper-bound set, and returned as both the lower and upper-bounds.
 """
 function find_sigma_bounds(scm_init::SCM_Init, p::AbstractVector{<:Real}, 
-                           sigma_eps::Float64=0.5)
+                           sigma_eps::Float64=1.0)
     # Find lower bound through linear program
     σ_LB, y_LB = solve_LBs_LP(scm_init, p)
     if !scm_init.spd
@@ -443,6 +457,14 @@ function find_sigma_bounds(scm_init::SCM_Init, p::AbstractVector{<:Real},
         @printf("Warning: Computed ϵ of %.4e was greater than the tolerance of %.4e.\n", ϵ, sigma_eps)
         println("Recomputing explicitly, adding to upper-bound set, and returning explicit result.")
         push!(scm_init.C, p)
+        C_idx = -1
+        for (i,ptree) in enumerate(scm_init.tree.data)
+            if ptree == p
+                C_idx = scm_init.tree.indices[i]
+                break
+            end
+        end
+        push!(scm_init.C_indices, C_idx)
         σ, y = scm_init.make_UB(p)
         push!(scm_init.Y_UB, y)
         push!(scm_init.σ_UBs, σ)

@@ -29,7 +29,7 @@ Offline, solves for the minimum singular value for each parameter
 in `params`, and uses this to form an interpolatory approximation
 in the form of
 `log(σ_min(A(p))) ≈ ω_0 + ∑ (ω_i p_i) + ∑ (γ_i ϕ(p - p_i))`
-where `p_i` is the i'th parameter in `params`, and `ω_0`, `ω_i', and
+where `p_i` is the i'th parameter in `params`, and `ω_0`, `ω_i`, and
 `γ_i` are determined by the given `params` such that the approximation
 holds true for all `p_i`, and that `∑ γ_i = 0`, and that `∑ γ_i p_i[j] = 0`
 for each `j`.
