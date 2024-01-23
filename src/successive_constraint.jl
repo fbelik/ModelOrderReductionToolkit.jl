@@ -336,6 +336,10 @@ amount of printed information, between 0 and 2, with 0 being nothing
 displayed, and 1 is default.
 """
 function form_upperbound_set!(scm_init::SCM_Init; noise::Int=1)
+    if noise >= 1
+        println("Beginning SCM Procedure")
+        println("----------")
+    end
     while length(scm_init.C) < length(scm_init.tree.data)
         ϵ_k = 0
         σ_UB_k = 0
@@ -405,6 +409,7 @@ function form_upperbound_set!(scm_init::SCM_Init; noise::Int=1)
         end
         if ϵ_k < scm_init.ϵ
             if noise >= 1
+                println("----------")
                 @printf("Terminating on iteration k = %d with ϵ_k=%.4e\n",
                         length(scm_init.C),ϵ_k)
             end
@@ -436,11 +441,6 @@ scm_init's upper-bound set, and returned as both the lower and upper-bounds.
 """
 function find_sigma_bounds(scm_init::SCM_Init, p::AbstractVector{<:Real}, 
                            sigma_eps::Float64=1.0)
-    # Find lower bound through linear program
-    σ_LB, y_LB = solve_LBs_LP(scm_init, p)
-    if !scm_init.spd
-        σ_LB = sqrt(max(0.0,σ_LB))
-    end
     # Loop through Y_{UB} to find upper-bound
     σ_UB = Inf
     for y in scm_init.Y_UB
@@ -452,6 +452,13 @@ function find_sigma_bounds(scm_init::SCM_Init, p::AbstractVector{<:Real},
     if !scm_init.spd
         σ_UB = sqrt(σ_UB)
     end
+    # Find lower bound through linear program
+    σ_LB, y_LB = solve_LBs_LP(scm_init, p)
+    if !scm_init.spd
+        σ_LB = sqrt(max(0.0,σ_LB))
+    end
+    # In case of roundoff error
+    σ_LB = min(σ_LB, σ_UB)
     ϵ = (σ_UB - σ_LB) / σ_UB
     if ϵ > sigma_eps
         @printf("Warning: Computed ϵ of %.4e was greater than the tolerance of %.4e.\n", ϵ, sigma_eps)

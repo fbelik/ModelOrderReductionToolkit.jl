@@ -67,10 +67,10 @@ function pca_projector(
     m = size(A)[1]
     n = n0 # Avoid type Core.Box
     # Orthogonal projector
-    P(b::AbstractVecOrMat) = begin
+    P(b::AbstractVecOrMat, full::Bool=true) = begin
         # Variables to keep in scope
         n; m; s
-        return M * (M' * b)
+        return full ? M * (M' * b) : M' * b 
     end
     return P
 end
@@ -111,10 +111,10 @@ function qr_projector(
     n = dim
     MtMinv = inv(M' * M)
     # Orthogonal projector
-    P(b::AbstractVecOrMat{Float64}) = begin 
+    P(b::AbstractVecOrMat, full::Bool=true) = begin 
         # Variables to keep in scope
         n; m
-        return M * (MtMinv * (M' * b))
+        return full ? M * (MtMinv * (M' * b)) : MtMinv * (M' * b)
     end
 
     return P
@@ -202,10 +202,10 @@ function eim_projector(
     # Orthogonal projector
     m = size(A)[1]
     n = dim
-    P(b::AbstractVecOrMat) = begin 
+    P(b::AbstractVecOrMat, full::Bool=true) = begin 
         # Variables to keep in scope
         n; m
-        A_C * (A_CR \ b[p[1:dim],:])
+        return full ? A_C * (A_CR \ b[p[1:dim],:]) : A_CR \ b[p[1:dim],:]
     end
     return P
 end

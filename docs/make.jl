@@ -3,8 +3,10 @@ using MOR
 
 makedocs(
     sitename = "MOR.jl",
-    modules  = [MOR], # If do this, must add docs for each method
+    modules  = [MOR],
     pages    = [
-        "index.md" # Add additional pages here
-    ]
+        "index.md",
+        "test_prob.md"
+    ],
+    format = Documenter.HTML(prettyurls = false)
 )
