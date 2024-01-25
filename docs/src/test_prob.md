@@ -28,8 +28,8 @@ using ModelOrderReductionToolkit
 using Plots
 using Printf
 using Random # hide
+gr() # hide
 Random.seed!(1) # hide
-pyplot() # hide
 # Boundary conditions
 uleft = 0.0
 uright = 1.0
