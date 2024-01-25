@@ -16,7 +16,7 @@ a matrix with columns defining bases for approximation
 spaces `x ≈ V x_r`.
 """
 mutable struct Affine_Residual_Init
-    cijs::Vector
+    cijs::Vector # TODO: Store Eijs as vector of vectors to avoid memory allocations
     dijs::Vector
     Eijs::Vector
     Ais::Vector

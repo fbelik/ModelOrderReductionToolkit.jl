@@ -24,7 +24,7 @@ A(p) u = b(p)
 ```
 where ``u\in\mathbb{R}^n``,  ``A(p)\in\mathbb{R}^{n\times n}`` is a positive-definite matrix, and both ``A(p)`` and ``b(p)\in\mathbb{R}^n`` have affine parameter dependence.
 ```@example 1
-using MOR
+using ModelOrderReductionToolkit
 using Plots
 using Printf
 using Random # hide
@@ -132,7 +132,7 @@ Defining ``e(p)=u(p) - u_r(p)`` to be the error in our approximation, and ``r(p)
 
 The goal of this method will be to use *offline* time to approximate the *stability factor*, ``\sigma_{min}(A(p))``, and the norm of the residual, ``||r(p)||_2``.
 
-First, we will use the **successive constraint method**, (SCM), to compute a lower-bound approximation of the stability factor, to assure that the above error inequality still holds. For details on implementation, see reference 1. In MOR.jl, the implementation for a **symmetric positive definite** problem is as follows:
+First, we will use the **successive constraint method**, (SCM), to compute a lower-bound approximation of the stability factor, to assure that the above error inequality still holds. For details on implementation, see reference 1. In ModelOrderReductionToolkit.jl, the implementation for a **symmetric positive definite** problem is as follows:
 ```@example 1
 # Generate parameter discretization set
 p_lb = 0.1
@@ -160,7 +160,7 @@ scm = initialize_SCM_Noncoercive(params, Ais, makeθAi, Ma, Mp, ϵ_SCM)
 With the SCM object initialized, one can call the `GreedyRBAffineLinear` method to greedily generate a reduced basis, ``\{v_i\}_{i=1}^r``, one element at a time, to an ``l^2`` error on the order of ``\epsilon_{greedy}``, see reference 2,
 ```@example 1
 ϵ_greedy = 1e-1  
-greedy_sol = MOR.GreedyRBAffineLinear(scm, Ais, makeθAi, bis, makeθbi, ϵ_greedy)
+greedy_sol = GreedyRBAffineLinear(scm, Ais, makeθAi, bis, makeθbi, ϵ_greedy)
 ```
 ```@example 1
 using Colors

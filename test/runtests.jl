@@ -1,6 +1,6 @@
-using MOR
+using ModelOrderReductionToolkit
 using Test
 
-@testset "MOR.jl" begin
+@testset "ModelOrderReductionToolkit.jl" begin
     # Write your tests here.
 end

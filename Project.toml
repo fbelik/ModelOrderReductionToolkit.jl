@@ -1,4 +1,4 @@
-name = "MOR"
+name = "ModelOrderReductionToolkit"
 uuid = "3b95acbd-20d2-4f07-8ac8-8df51737bf8b"
 authors = ["fbelik <fjbelik@gmail.com> and contributors"]
 version = "1.0.0-DEV"

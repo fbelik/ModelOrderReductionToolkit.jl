@@ -1,4 +1,4 @@
-module MOR
+module ModelOrderReductionToolkit
 ## REMOVE REVISE AND PROGRESSBARS AND PLOTS
 using LinearAlgebra
 include("projections.jl")

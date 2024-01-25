@@ -182,6 +182,7 @@ function GreedyRBAffineLinear(scm_init::SCM_Init,
         end
         nx = norm(x)
         x = x ./ nx
+        # TODO: Store V0, VtAVis, Vtbs as vector of vectors to avoid memory allocations
         for i in eachindex(Ais)
             row = x' * Ais[i] * V0
             col = zeros(length(row) + 1)

@@ -1,12 +1,16 @@
 using Documenter
-using MOR
+using ModelOrderReductionToolkit
 
 makedocs(
-    sitename = "MOR.jl",
-    modules  = [MOR],
+    sitename = "ModelOrderReductionToolkit.jl",
+    modules  = [ModelOrderReductionToolkit],
     pages    = [
-        "index.md",
-        "test_prob.md"
+        "Docstrings" => "index.md",
+        "Test Problem" => "test_prob.md"
     ],
     format = Documenter.HTML(prettyurls = false)
+)
+
+deploydocs(;
+    repo="github.com/fbelik/ModelOrderReductionToolkit.jl.git",
 )
