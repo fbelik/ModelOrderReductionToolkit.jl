@@ -52,8 +52,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v2
         with:
-            # Upload gh-pages
-            path: './tree/gh-pages'
+            # Upload whole repo
+            path: '.'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4 # or specific "vX.X.X" version tag for this action
