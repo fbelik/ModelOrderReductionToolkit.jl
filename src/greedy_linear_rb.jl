@@ -28,17 +28,19 @@ struct Greedy_RB_Affine_Linear
     makeθbi::Function
     param_disc::AbstractVector
     params_greedy::AbstractVector
-    V::AbstractMatrix
-    VtAVis::AbstractVector{<:AbstractMatrix}
-    Vtbis::AbstractVector{<:AbstractVector}
+    V::Vector{Vector{Float64}}
+    VtAVis::Vector{Vector{Vector{Float64}}}#AbstractVector{<:AbstractMatrix}
+    Vtbis::Vector{Vector{Float64}}
     ϵ::Real
+    VtAV::Matrix{Float64} # Preallocated
+    Vtb::Vector{Float64}
 end
 
 function Base.show(io::Core.IO, greedy_sol::Greedy_RB_Affine_Linear)
     res = "Initialized reduced basis method for parametrized problem A(p) x = b(p) with affine parameter dependence:\n"
     res *= "    A(p) = ∑ makeθAi(p,i) Ais[i],\n"
     res *= "    b(p) = ∑ makeθbi(p,i) bis[i].\n"
-    res *= "Galerkin projection is used onto an $(size(greedy_sol.V)[2]) dimensional space:\n"
+    res *= "Galerkin projection is used onto an $(length(greedy_sol.V)) dimensional space:\n"
     res *= "    V' A(p) V x_r = V' b(p),\n"
     res *= "    V x_r ≈ x = A(p)^(-1) b(p)."
     print(io, res)
@@ -52,20 +54,26 @@ Forms the reduced basis solution for the parameter vector `p`,
 the shortened vector `(V' A(p))^(-1) V' b(p)`.
 """
 function (greedy_sol::Greedy_RB_Affine_Linear)(p, full=true)
-    VtAV = zeros(size(greedy_sol.VtAVis[1]))
+    greedy_sol.VtAV .= 0.0
     for i in eachindex(greedy_sol.VtAVis)
-        VtAV .+= greedy_sol.makeθAi(p,i) .* greedy_sol.VtAVis[i]
+        θAi = greedy_sol.makeθAi(p,i)
+        for j in eachindex(greedy_sol.VtAVis[1])
+            greedy_sol.VtAV[:,j] .+= θAi .* greedy_sol.VtAVis[i][j]
+        end
     end
-    Vtb = zeros(length(greedy_sol.Vtbis[1]))
+    greedy_sol.Vtb .= 0.0
     for i in eachindex(greedy_sol.Vtbis)
-        Vtb .+= greedy_sol.makeθbi(p,i) .* greedy_sol.Vtbis[i]
+        greedy_sol.Vtb .+= greedy_sol.makeθbi(p,i) .* greedy_sol.Vtbis[i]
     end
-    x_r =  VtAV \ Vtb
+    x_r = greedy_sol.VtAV \ greedy_sol.Vtb
+    x_approx = zeros(length(greedy_sol.V[1]))
     if full
-        return greedy_sol.V * x_r
-    else
-        return x_r
+        for i in eachindex(x_r)
+            x_approx .+= x_r[i] * greedy_sol.V[i]
+        end
+        return x_approx
     end
+    return x_r
 end
 
 """
@@ -105,20 +113,26 @@ function GreedyRBAffineLinear(scm_init::SCM_Init,
         params = param_disc
     end
     # Choose a parameter vector p to begin with
+    Atruth = zeros(size(Ais[1]))
+    btruth = zeros(length(bis[1]))
     truth_sol(p) = begin
-        A = zeros(size(Ais[1]))
+        Atruth .= 0.0
         for i in eachindex(Ais)
-            A .+= makeθAi(p,i) .* Ais[i]
+            Atruth .+= makeθAi(p,i) .* Ais[i]
         end
-        b = zeros(length(bis[1]))
+        btruth .= 0.0
         for i in eachindex(bis)
-            b .+= makeθbi(p,i) .* bis[i]
+            btruth .+= makeθbi(p,i) .* bis[i]
         end
-        return A \ b
+        return Atruth \ btruth
     end
     # Begin iteration by parameter with minimum stability factor
     if noise >= 1
-        @printf("Beginning greedy selection, looping until truth error less than ϵ=%.2e\n----------\n",ϵ)
+        @printf("Beginning greedy selection, looping until truth error less than ϵ=%.2e",ϵ)
+        if max_snapshots >= 1
+            @printf("\nor until %d snapshots formed", max_snapshots)
+        end
+        print("\n----------\n")
     end
     maxerr = 0
     p1 = nothing
@@ -132,22 +146,34 @@ function GreedyRBAffineLinear(scm_init::SCM_Init,
     end
     x = truth_sol(p1)
     x = x ./ norm(x)
-    V0 = reshape(x, (length(x), 1))
-    VtAVis = [V0' * Ai * V0 for Ai in Ais]
-    Vtbis = [V0' * b for b in bis]
-    approx_sol(p,VtAVis,Vtbis) = begin
-        VtAV = zeros(size(VtAVis[1]))
+    V0 = Vector{Float64}[x]
+    VtAVis = Vector{Vector{Float64}}[]
+    for Ai in Ais
+        VtAVi = Vector{Float64}[Float64[x' * Ai * x]]
+        push!(VtAVis, VtAVi)
+    end
+    VtAV = zeros(1,1)
+    Vtbis = Vector{Float64}[]
+    for bi in bis
+        push!(Vtbis, Float64[x' * bi])
+    end
+    Vtb = zeros(1)
+    approx_sol(p,VtAVis,Vtbis, VtAV, Vtb) = begin
+        VtAV .= 0.0
         for i in eachindex(VtAVis)
-            VtAV .+= makeθAi(p,i) .* VtAVis[i]
+            θAi = makeθAi(p,i)
+            for j in eachindex(VtAVis[1])
+                VtAV[:,j] .+= θAi .* VtAVis[i][j]
+            end
         end
-        Vtb = zeros(length(Vtbis[1]))
+        Vtb .= 0.0
         for i in eachindex(Vtbis)
             Vtb .+= makeθbi(p,i) .* Vtbis[i]
         end
         return VtAV \ Vtb
     end
     # Initialize res_init to compute residual norm
-    res_init = residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, V0)
+    res_init = residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, reshape(x, (length(x),1)))
     if noise >= 1
         print("k=1, first parameter value chosen, initialized for greedy search\n")
     end
@@ -164,7 +190,7 @@ function GreedyRBAffineLinear(scm_init::SCM_Init,
                 continue
             end
             stability_factor = find_sigma_bounds(scm_init, p, ϵ*10)[1]
-            x_r = approx_sol(p,VtAVis,Vtbis)
+            x_r = approx_sol(p,VtAVis,Vtbis,VtAV,Vtb)
             res_norm = residual_norm_affine_online(res_init, x_r, p)
             err = res_norm / stability_factor
             if err > maxerr
@@ -174,28 +200,40 @@ function GreedyRBAffineLinear(scm_init::SCM_Init,
         end
         # Compute full solution to add to V
         x = truth_sol(maxp)
-        x_r = approx_sol(maxp,VtAVis,Vtbis)
-        trueerr = norm(x .- V0*x_r)
+        x_r = approx_sol(maxp,VtAVis,Vtbis,VtAV,Vtb)
+        x_approx = zeros(length(x))
+        for i in eachindex(V0)
+            x_approx .+= x_r[i] .* V0[i]
+        end
+        trueerr = norm(x .- x_approx)
         # Make orthogonal to v1,...,vn
-        for i in 1:size(V0)[2]
-            x .-= (V0[:,i]'x) .* V0[:,i]
+        for i in eachindex(V0)
+            x .-= (V0[i]'x) .* V0[i]
         end
         nx = norm(x)
         x = x ./ nx
-        # TODO: Store V0, VtAVis, Vtbs as vector of vectors to avoid memory allocations
         for i in eachindex(Ais)
-            row = x' * Ais[i] * V0
-            col = zeros(length(row) + 1)
-            col[1:end-1] .= V0' * Ais[i] * x
-            col[end] = x'  * Ais[i] * x
-            VtAVis[i] = hcat(vcat(VtAVis[i], row), col)
+            # Add to each row of VtAVis[i]
+            for k in 1:length(res_init.V)
+                newrowval = x' * Ais[i] * V0[k]
+                push!(VtAVis[i][k], newrowval)
+            end
+            newcol = zeros(length(res_init.V)+1)
+            # Add to new column
+            for k in 1:length(res_init.V)
+                newcol[k] = V0[k]' * Ais[i] * x
+            end
+            newcol[end] = x' * Ais[i] * x
+            push!(VtAVis[i], newcol)
         end
+        VtAV = zeros(length(res_init.V)+1,length(res_init.V)+1)
         for i in eachindex(bis)
             Vtbis_end = x' * bis[i]
             push!(Vtbis[i], Vtbis_end)
         end
+        Vtb = zeros(length(res_init.V)+1)
         add_col_to_V(res_init, x)
-        V0 = hcat(V0, x)
+        push!(V0, x)
         push!(ps, maxp)
         if noise >= 1
             @printf("k=%d, truth error = %.4e, upperbound error = %.4e\n",k,trueerr,maxerr)
@@ -210,5 +248,5 @@ function GreedyRBAffineLinear(scm_init::SCM_Init,
     end
     return Greedy_RB_Affine_Linear(scm_init, res_init, Ais, makeθAi, bis,
                                    makeθbi, params, ps, V0, VtAVis,
-                                   Vtbis, ϵ)
+                                   Vtbis, ϵ, VtAV, Vtb)
 end

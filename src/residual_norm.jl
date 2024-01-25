@@ -16,7 +16,7 @@ a matrix with columns defining bases for approximation
 spaces `x ≈ V x_r`.
 """
 mutable struct Affine_Residual_Init
-    cijs::Vector # TODO: Store Eijs as vector of vectors to avoid memory allocations
+    cijs::Vector
     dijs::Vector
     Eijs::Vector
     Ais::Vector
@@ -26,7 +26,7 @@ mutable struct Affine_Residual_Init
     n::Int
     QA::Int
     Qb::Int
-    V::Matrix
+    V::Vector
     X::Matrix
 end
 
@@ -63,7 +63,6 @@ function residual_norm_affine_init(Ais::AbstractVector,
                                    V::AbstractMatrix,
                                    X::Union{Nothing,Matrix}=nothing)
     n = length(bis[1])
-    n_r = size(V)[2]
     QA = length(Ais)
     Qb = length(bis)
     # Form X if nothing
@@ -90,15 +89,20 @@ function residual_norm_affine_init(Ais::AbstractVector,
         end
     end
     # Form E_ij = V^T A_i^T X A_j V
-    Eijs = Matrix{Float64}[]
+    # Store E_ijs as vector of vectors
+    Eijs = Vector{Vector{Float64}}[]
     for i in 1:QA
-        Eii = V' * Ais[i]' * X0 * Ais[i] * V
+        Eii_mat = V' * Ais[i]' * X0 * Ais[i] * V
+        Eii = [@view Eii_mat[:,i] for i in 1:size(Eii_mat)[2]]
         push!(Eijs, Eii)
         for j in i+1:QA
-            Eij = V' * Ais[i]' * X0 * Ais[j] * V
+            Eij_mat = V' * Ais[i]' * X0 * Ais[j] * V
+            Eij = [@view Eij_mat[:,i] for i in 1:size(Eij_mat)[2]]
             push!(Eijs, Eij)
         end
     end
+    # Store V as vector of vectors
+    V = Vector{Float64}[V[:,i] for i in 1:size(V)[2]]
     return Affine_Residual_Init(cijs, dijs, Eijs, Ais, makeθAi, 
                                 bis, makeθbi, n, QA, Qb, V, X0)
 end
@@ -123,26 +127,39 @@ function add_col_to_V(res_init::Affine_Residual_Init, v::Vector)
     # Append to Eij matrices
     idx = 1
     for i in eachindex(res_init.Ais)
-        # Form new row then column 
-        Eij_row = v' * res_init.Ais[i]' * res_init.X' * res_init.Ais[i] * res_init.V
-        Eij_col = zeros(length(Eij_row)+1)
-        Eij_col[1:end-1] .= Eij_row[1,:]
+        # Add to each row of V
+        for k in 1:length(res_init.V)
+            newrowval = v' * res_init.Ais[i]' * res_init.X' * res_init.Ais[i] * res_init.V[k]
+            push!(res_init.Eijs[idx][k], newrowval)
+        end
+        # Form new column of V
+        Eij_col = zeros(length(res_init.V)+1)
+        for k in 1:length(res_init.V)
+            newcolval = res_init.V[k]' * res_init.Ais[i]' * res_init.X' * res_init.Ais[i] * v
+            Eij_col[k] = newcolval
+        end
         Eij_col[end] = v' * res_init.Ais[i]' * res_init.X' * res_init.Ais[i] * v
-        res_init.Eijs[idx] = hcat(vcat(res_init.Eijs[idx], Eij_row), Eij_col)
+        push!(res_init.Eijs[idx], Eij_col)
         idx += 1
         for j in i+1:length(res_init.Ais)
-            # Form new row then column  
-            # V' * Ais[i]' * X0 * Ais[j] * V
-            Eij_row = v' * res_init.Ais[i]' * res_init.X' * res_init.Ais[j] * res_init.V
-            Eij_col = zeros(length(Eij_row)+1)
-            Eij_col[1:end-1] .= res_init.V' * res_init.Ais[i]' * res_init.X' * res_init.Ais[j] * v
+            # Add to each row of V
+            for k in 1:length(res_init.V)
+                newrowval = v' * res_init.Ais[i]' * res_init.X' * res_init.Ais[j] * res_init.V[k]
+                push!(res_init.Eijs[idx][k], newrowval)
+            end
+            # Form new column of V
+            Eij_col = zeros(length(res_init.V)+1)
+            for k in 1:length(res_init.V)
+                newcolval = res_init.V[k]' * res_init.Ais[i]' * res_init.X' * res_init.Ais[j] * v
+                Eij_col[k] = newcolval
+            end
             Eij_col[end] = v' * res_init.Ais[i]' * res_init.X' * res_init.Ais[j] * v
-            res_init.Eijs[idx] = hcat(vcat(res_init.Eijs[idx], Eij_row), Eij_col)
+            push!(res_init.Eijs[idx], Eij_col)
             idx += 1
         end
     end
     # Append to V matrix
-    res_init.V = hcat(res_init.V, v)
+    push!(res_init.V, v)
 end
 
 """
@@ -185,10 +202,18 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init,
     # Sum across Eijs
     idx = 1
     for i in 1:res_init.QA
-        res += θAis[i]^2 * (x_r' * res_init.Eijs[idx] * x_r)
+        cur = 0.0
+        for k in eachindex(x_r)
+            cur += x_r[k] * dot(res_init.Eijs[idx][k], x_r)
+        end
+        res += θAis[i]^2 * cur
         idx += 1
         for j in i+1:res_init.QA
-            res += 2 * θAis[i] * θAis[j] * (x_r' * res_init.Eijs[idx] * x_r)
+            cur = 0.0
+            for k in eachindex(x_r)
+                cur += x_r[k] * dot(res_init.Eijs[idx][k], x_r)
+            end
+            res += 2 * θAis[i] * θAis[j] * cur
             idx += 1
         end
     end
