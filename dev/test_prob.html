@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Test Problem · ModelOrderReductionToolkit.jl</title><meta name="title" content="Test Problem · ModelOrderReductionToolkit.jl"/><meta property="og:title" content="Test Problem · ModelOrderReductionToolkit.jl"/><meta property="twitter:title" content="Test Problem · ModelOrderReductionToolkit.jl"/><meta name="description" content="Documentation for ModelOrderReductionToolkit.jl."/><meta property="og:description" content="Documentation for ModelOrderReductionToolkit.jl."/><meta property="twitter:description" content="Documentation for ModelOrderReductionToolkit.jl."/><script data-outdated-warner src="assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="assets/documenter.js"></script><script src="search_index.js"></script><script src="siteinfo.js"></script><script src="../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="index.html">ModelOrderReductionToolkit.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="index.html">Docstrings</a></li><li class="is-active"><a class="tocitem" href="test_prob.html">Test Problem</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href="test_prob.html">Test Problem</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href="test_prob.html">Test Problem</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/fbelik/ModelOrderReductionToolkit.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/fbelik/ModelOrderReductionToolkit.jl/blob/master/docs/src/test_prob.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Test-Problem"><a class="docs-heading-anchor" href="#Test-Problem">Test Problem</a><a id="Test-Problem-1"></a><a class="docs-heading-anchor-permalink" href="#Test-Problem" title="Permalink"></a></h1><p>Consider the parametrized PDE problem</p><p class="math-container">\[\begin{cases}-\frac{d}{dx} \left(\kappa(x,p) \frac{d}{dx} u(x,p)\right) = f(x,p),\quad x\in[0,1]\\
+u(0,p) = 0.0\\
+u(1,p) = 1.0\\
+0.1\leq p_1,p_2\leq 2.1
+\end{cases}\]</p><p>where </p><p class="math-container">\[\kappa(x,p) = \sum_{i=1}^2 p_i \cdot (1.1 + \sin(2\pi i x)),\]</p><p>and </p><p class="math-container">\[f(x,p) = \begin{cases}10.0 &amp; x &gt; 0.5 \\ 0.0 &amp; x \leq 0.5\end{cases}\bigg\} + \sum_{i=1}^2 p_i \cdot \sin(2\pi i x)\]</p><p>are affinely parameter dependent diffusion coefficient and forcing terms respectively. </p><p>We can discretize and explicitly solve this problem by using finite differences, the problem can be rewritten as</p><p class="math-container">\[A(p) u = b(p)\]</p><p>where <span>$u\in\mathbb{R}^n$</span>,  <span>$A(p)\in\mathbb{R}^{n\times n}$</span> is a positive-definite matrix, and both <span>$A(p)$</span> and <span>$b(p)\in\mathbb{R}^n$</span> have affine parameter dependence.</p><pre><code class="language-julia hljs">using ModelOrderReductionToolkit
+using Plots
+using Printf
+# Boundary conditions
+uleft = 0.0
+uright = 1.0
+P = 2
+κ_i(i,x) = 1.1 .+ sin.(2π * i * x)
+κ(x,p) = sum([p[i] * κ_i(i,x) for i in 1:P])
+# Derivative of diffusion coefficient
+κp_i(i,x) = 2π * i * cos.(2π * i * x)
+κp(x,p) = sum([p[i] * κp_i(i,x) for i in 1:P])
+# Parameter dependent source term
+f_i(i,x) = i == 1 ? (x .&gt; 0.5) .* 10.0 : 20 .* sin.(2π * (i-1) * x)
+f(x,p) = f_i(1,x) .+ sum([p[i-1] * f_i(i,x) for i in 2:P+1])
+# Space setup
+h = 1e-3
+xs = Vector((0:h:1)[2:end-1])
+N = length(xs)
+# Helper to generate random parameter vector
+randP() = 0.1 .+ 2 .* rand(P)
+# Ai matrices
+function makeAi(i)
+    A = zeros(N,N)
+    for j in 1:N
+        A[j,j]   = 2*κ_i(i,xs[j]) / h^2
+        if j&lt;N
+            A[j,j+1] = -κp_i(i,xs[j]) / (2h) - κ_i(i,xs[j]) / h^2
+        end
+        if j&gt;1
+            A[j,j-1] = κp_i(i,xs[j]) / (2h) - κ_i(i,xs[j]) / h^2
+        end
+    end
+    return A
+end
+Ais = Matrix{Float64}[]
+for i in 1:P
+    push!(Ais, makeAi(i))
+end
+# θAis
+function makeθAi(p,i)
+    return p[i]
+end
+function makeA(p)
+    A = zeros(size(Ais[1]))
+    for i in eachindex(Ais)
+        A .+= makeθAi(p,i) .* Ais[i]
+    end
+    return A
+end
+# bi vectors
+function makebi(i)
+    b = f_i(i,xs)
+    if i &gt; 1
+        b[1] -= uleft * (κp_i(i,xs[1]) / (2h) - κ_i(i,xs[1]) / h^2)
+        b[end] -= uright * (-κp_i(i,xs[N]) / (2h) - κ_i(i,xs[N]) / h^2)
+    end
+    return b
+end
+bis = Vector{Float64}[]
+for i in 1:P+1
+    push!(bis, makebi(i))
+end
+# θbis
+function makeθbi(p,i)
+    if i == 1
+        return 1.0
+    else
+        return p[i-1]
+    end
+end
+function makeb(p)
+    b = zeros(size(bis[1]))
+    for i in eachindex(bis)
+        b .+= makeθbi(p,i) .* bis[i]
+    end
+    return b
+end
+
+plt = plot(legend=:topleft)
+for i in 1:10
+    p = randP()
+    A = makeA(p)
+    b = makeb(p)
+    u = A \ b
+    plot!(xs, u, label=@sprintf(&quot;p=[%.2f,%.2f]&quot;,p...), alpha=0.5)
+end
+title!(&quot;Example solutions&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">qt.qpa.xcb: could not connect to display
+qt.qpa.plugin: From 6.5.0, xcb-cursor0 or libxcb-cursor0 is needed to load the Qt xcb platform plugin.
+qt.qpa.plugin: Could not load the Qt platform plugin &quot;xcb&quot; in &quot;&quot; even though it was found.
+This application failed to start because no Qt platform plugin could be initialized. Reinstalling the application may fix this problem.
+
+Available platform plugins are: offscreen, minimalegl, linuxfb, eglfs, vkkhrdisplay, xcb, vnc, minimal.
+
+Aborted (core dumped)
+connect: Connection refused
+GKS: can&#39;t connect to GKS socket application
+
+GKS: Open failed in routine OPEN_WS
+GKS: GKS not in proper state. GKS must be either in the state WSOP or WSAC in routine ACTIVATE_WS</code></pre><p><img src="ex1.svg" alt/></p><p>We will construct a reduced basis method (RBM) to construct an <span>$r$</span>-dimensional solution space to construct approximations</p><p class="math-container">\[u(p) \approx V u_r(p) = \sum_{i=1}^r u_r^{(i)}(p) v_i\]</p><p>where <span>$\{v_i\}_{i=1}^r$</span> is a chosen basis with <span>$u_r(p)\in\mathbb{R}^r$</span>, <span>$V\in\mathbb{R}^{n\times r}$</span>, and <span>$r\ll n$</span>. Additionally, due to the potential computational cost of inverting large <span>$A(p)$</span>, we wish to minimize the number of times we solve the full-order, <em>truth</em>, system.</p><p>Defining <span>$e(p)=u(p) - u_r(p)$</span> to be the error in our approximation, and <span>$r(p)=b(p) - u_r(p)$</span> to be the residual, one can show that</p><p class="math-container">\[||e(p)||_2 = ||A(p)^{-1} A(p)(u(p) - u_r(p))||_2 \leq \sigma_{min}(A(p)) ||r(p)||_2.\]</p><p>The goal of this method will be to use <em>offline</em> time to approximate the <em>stability factor</em>, <span>$\sigma_{min}(A(p))$</span>, and the norm of the residual, <span>$||r(p)||_2$</span>.</p><p>First, we will use the <strong>successive constraint method</strong>, (SCM), to compute a lower-bound approximation of the stability factor, to assure that the above error inequality still holds. For details on implementation, see reference 1. In ModelOrderReductionToolkit.jl, the implementation for a <strong>symmetric positive definite</strong> problem is as follows:</p><pre><code class="language-julia hljs"># Generate parameter discretization set
+p_lb = 0.1
+p_ub = 2.1
+params = []
+for p1 in range(p_lb,p_ub,21)
+    for p2 in range(p_lb,p_ub,21)
+        push!(params, [p1,p2])
+    end
+end
+# Initialize SCM Object
+Ma = 50; Mp = 15; ϵ_SCM = 1e-2;
+scm = initialize_SCM_SPD(params, Ais, makeθAi, Ma, Mp, ϵ_SCM)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Initialized SCM Object for parametrized symmetric
+positive definite matrix A(p) = ∑_{i=1}^QA θ_i(p) A_i.
+
+Mα=50, Mp=15, ϵ=1.0000e-02.</code></pre><p>As can be seen in the below example, the method <code>find_sigma_bounds(scm,p)</code> returns both an upper-bound and a lower-bound estimate for the stability factor with a relative error on the order of <code>ϵ_SCM</code> as long as it is not too far from a parameter value in the discretization, <code>params</code>.</p><pre><code class="language-julia hljs">find_sigma_bounds(scm, randP())</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(20.70555869828674, 20.729341343566183)</code></pre><p>Note that in the case that <span>$A(p)$</span> is not SPD, one should instead use the noncoercive method.</p><pre><code class="language-julia hljs">scm = initialize_SCM_Noncoercive(params, Ais, makeθAi, Ma, Mp, ϵ_SCM)</code></pre><p>With the SCM object initialized, one can call the <code>GreedyRBAffineLinear</code> method to greedily generate a reduced basis, <span>$\{v_i\}_{i=1}^r$</span>, one element at a time, to an <span>$l^2$</span> error on the order of <span>$\epsilon_{greedy}$</span>, see reference 2,</p><pre><code class="language-julia hljs">ϵ_greedy = 1e-1
+greedy_sol = GreedyRBAffineLinear(scm, Ais, makeθAi, bis, makeθbi, ϵ_greedy)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Initialized reduced basis method for parametrized problem A(p) x = b(p) with affine parameter dependence:
+    A(p) = ∑ makeθAi(p,i) Ais[i],
+    b(p) = ∑ makeθbi(p,i) bis[i].
+Galerkin projection is used onto an 8 dimensional space:
+    V&#39; A(p) V x_r = V&#39; b(p),
+    V x_r ≈ x = A(p)^(-1) b(p).</code></pre><pre><code class="language-julia hljs">using Colors
+colors = palette(:tab10)
+plt = plot(legend=:topleft)
+for i in 1:10
+    p = randP()
+    A = makeA(p)
+    b = makeb(p)
+    u = A \ b
+    u_r = greedy_sol(p)
+    plot!(xs, u, c=colors[i],label=(i==1 ? &quot;truth&quot; : false))
+    plot!(xs, u_r, c=colors[i], ls=:dash,label=(i==1 ? &quot;greedy&quot; : false))
+end
+title!(&quot;Example solutions and greedy solutions&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">qt.qpa.xcb: could not connect to display
+qt.qpa.plugin: From 6.5.0, xcb-cursor0 or libxcb-cursor0 is needed to load the Qt xcb platform plugin.
+qt.qpa.plugin: Could not load the Qt platform plugin &quot;xcb&quot; in &quot;&quot; even though it was found.
+This application failed to start because no Qt platform plugin could be initialized. Reinstalling the application may fix this problem.
+
+Available platform plugins are: offscreen, minimalegl, linuxfb, eglfs, vkkhrdisplay, xcb, vnc, minimal.
+
+Aborted (core dumped)
+connect: Connection refused
+GKS: can&#39;t connect to GKS socket application
+
+GKS: Open failed in routine OPEN_WS
+GKS: GKS not in proper state. GKS must be either in the state WSOP or WSAC in routine ACTIVATE_WS</code></pre><p><img src="ex2.svg" alt/></p><p>Note that the method <code>GreedyRBAffineLinear</code> takes advantage of the affine parameter dependence of both the left and right hand sides for quick evaluation (approximation) of the norm of the residual, and the stability factor, which does not depend on the dimension of the original problem <code>n</code>. Only after it has looped through all of the parameters in the discretization, it chooses the one that displays the worst upper-bound error, computes the full-order solution for that parameter, and adds that solution as the next reduced basis element, <span>$v_i$</span>.</p><h3 id="References:"><a class="docs-heading-anchor" href="#References:">References:</a><a id="References:-1"></a><a class="docs-heading-anchor-permalink" href="#References:" title="Permalink"></a></h3><ol><li>D.B.P. Huynh, G. Rozza, S. Sen, A.T. Patera. A successive constraint linear optimization method for lower bounds of parametric coercivity and inf–sup stability constants. Comptes Rendus Mathematique. Volume 345, Issue 8. 2007. Pages 473-478. https://doi.org/10.1016/j.crma.2007.09.019.</li><li>Quarteroni, Alfio, Andrea Manzoni, and Federico Negri. Reduced Basis Methods for Partial Differential Equations. Vol. 92. UNITEXT. Cham: Springer International Publishing, 2016. http://link.springer.com/10.1007/978-3-319-15431-2.</li></ol></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="index.html">« Docstrings</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="auto">Automatic (OS)</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.2.1 on <span class="colophon-date" title="Thursday 25 January 2024 06:11">Thursday 25 January 2024</span>. Using Julia version 1.10.0.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
