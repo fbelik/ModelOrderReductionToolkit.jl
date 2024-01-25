@@ -5,3 +5,11 @@ ModelOrderReductionToolkit = "3b95acbd-20d2-4f07-8ac8-8df51737bf8b"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+
+[compat]
+Colors = "0.12"
+Documenter = "1"
+ModelOrderReductionToolkit = "1"
+Plots = "1"
+Printf = "1"
+Random = "1"
