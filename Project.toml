@@ -13,8 +13,8 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Tulip = "6dd1b50a-3aae-11e9-10b5-ef983d2400fa"
 
 [compat]
-julia = "0.22.0"
-JuMP = "1"
+julia = "1"
+JuMP = "0.22.0"
 NearestNeighbors = "0.4.16"
 ProgressBars = "1.5"
 StaticArrays = "1.9"
