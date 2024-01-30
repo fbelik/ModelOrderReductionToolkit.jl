@@ -96,27 +96,16 @@ function qr_projector(
     dim::Int) :: Function
     
     # Perform QR with pivots and obtain pivoted columns
-    _,_,p = LinearAlgebra.qr(A, LinearAlgebra.ColumnNorm())
-    M0 = A[:,p[1:dim]]
-    MtM = M0' * M0
-    rankMtM = LinearAlgebra.rank(MtM)
-    if rankMtM < dim
-        dim = rankMtM
-        M0 = A[:,p[1:dim]]
-        MtM = M0' * M0
-    end
-    # Rename to avoid M's type as Core.Box
-    M = M0
-    m = size(A)[1]
+    Q,_,_ = LinearAlgebra.qr(A, LinearAlgebra.ColumnNorm())
+    M = Q[:,1:dim]
+    m = size(M)[1]
     n = dim
-    MtMinv = inv(M' * M)
     # Orthogonal projector
     P(b::AbstractVecOrMat, full::Bool=true) = begin 
         # Variables to keep in scope
         n; m
-        return full ? M * (MtMinv * (M' * b)) : MtMinv * (M' * b)
+        return full ? M * (M' * b) : M' * b
     end
-
     return P
 end
 
@@ -205,7 +194,7 @@ function eim_projector(
     P(b::AbstractVecOrMat, full::Bool=true) = begin 
         # Variables to keep in scope
         n; m
-        return full ? A_C * (A_CR \ b[p[1:dim],:]) : A_CR \ b[p[1:dim],:]
+        return full ? A_C * (A_CR \ b[p[1:n],:]) : A_CR \ b[p[1:n],:]
     end
     return P
 end

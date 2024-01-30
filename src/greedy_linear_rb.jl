@@ -20,7 +20,7 @@ Given a new parameter vector, `p`, and an object
 basis solution with `greedy_sol(p[, full=true])`. 
 """
 struct Greedy_RB_Affine_Linear
-    scm_init::SCM_Init
+    approx_stability_factor::Function
     res_init::Affine_Residual_Init
     Ais::AbstractVector
     makeθAi::Function
@@ -29,7 +29,7 @@ struct Greedy_RB_Affine_Linear
     param_disc::AbstractVector
     params_greedy::AbstractVector
     V::Vector{Vector{Float64}}
-    VtAVis::Vector{Vector{Vector{Float64}}}#AbstractVector{<:AbstractMatrix}
+    VtAVis::Vector{Vector{Vector{Float64}}}
     Vtbis::Vector{Vector{Float64}}
     ϵ::Real
     VtAV::Matrix{Float64} # Preallocated
@@ -77,38 +77,37 @@ function (greedy_sol::Greedy_RB_Affine_Linear)(p, full=true)
 end
 
 """
-`GreedyRBAffineLinear(scm_init, Ais, makeθAi, bis, makeθbi[, ϵ=1.0, param_disc=nothing; max_snapshots=-1, noise=1])`
+`GreedyRBAffineLinear(param_disc, Ais, makeθAi, bis, makeθbi, approx_stability_factor[, ϵ=1e-2, param_disc=nothing; max_snapshots=-1, noise=1])`
 
 Constructs a `Greedy_RB_Affine_Linear` object for parametrized problem A(p) x = b(p) with affine parameter
 dependence:
 `A(p) = ∑ makeθAi(p,i) Ais[i]`, and
 `b(p) = ∑ makeθbi(p,i) bis[i]`.
-Uses `scm_init` to approximate the stability factor for each parameter in the discretization, chooses first 
-parameter to be one with smallest stability factor. Afterwards, utilizes the affine decomposition of `A(p)` 
-and `b(p)` to approximate the norm of the residual, and compute upper-bounds for the error:
+
+`param_disc` must either be a matrix with columns as parameters, or a vector of parameter vectors.
+Uses the function `approx_stability_factor` to approximate the stability factor for each parameter in the discretization, 
+chooses first parameter to be one with smallest stability factor. Afterwards, utilizes the affine decomposition of `A(p)` 
+and `b(p)` to compute the norm of the residual, and compute upper-bounds for the error:
 `||x - V x_r|| <= ||b(p) - A(p) V x_r|| / σ_min(A(p))`.
 
 Greedily chooses parameters and then forms truth solution for parameter that results in largest upper-bound
 for error. Then computes `||x - V x_r||`, and loops, adding to reduced basis, `V`, until the truth error
 is less than `ϵ`.
 
-If `param_disc` not passed in, then params will be taken from `scm_init`. If `max_snapshots` specified, will
-halt after that many if `ϵ` accuracy not yet reached. `noise` determines amount of printed output, `0` for no
-output, `1` for basic, and `2` for more.
+If `max_snapshots` specified, will halt after that many if `ϵ` accuracy not yet reached. `noise` determines amount 
+of printed output, `0` for no output, `1` for basic, and `2` for more.
 """
-function GreedyRBAffineLinear(scm_init::SCM_Init,
+function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVector},
                               Ais::AbstractVector,
                               makeθAi::Function,
                               bis::AbstractVector,
                               makeθbi::Function,
-                              ϵ=1e-2,
-                              param_disc::Union{Matrix,Vector,Nothing}=nothing;
+                              approx_stability_factor::Function,
+                              ϵ=1e-2;
                               max_snapshots=-1,
                               noise=1)
-    if isnothing(param_disc)
-        params = scm_init.tree.data
-    elseif param_disc isa Matrix
-        params = [param_disc[:,i] for i in 1:size(param_disc)[2]]
+    if param_disc isa AbstractMatrix
+        params = eachcol(param_disc)
     else
         params = param_disc
     end
@@ -135,9 +134,9 @@ function GreedyRBAffineLinear(scm_init::SCM_Init,
         print("\n----------\n")
     end
     maxerr = 0
-    p1 = nothing
+    p1 = params[1]
     for p in params
-        stability_factor = find_sigma_bounds(scm_init, p, ϵ*10)[1]
+        stability_factor = approx_stability_factor(p)
         err = 1.0 / stability_factor
         if err > maxerr
             p1 = p
@@ -182,14 +181,16 @@ function GreedyRBAffineLinear(scm_init::SCM_Init,
     if max_snapshots == -1
         max_snapshots = length(params)
     end
-    for k in 2:max_snapshots
+    k = 1
+    while k < max_snapshots
+        k += 1
         maxerr = 0
         maxp = nothing
         for p in params
             if p in ps
                 continue
             end
-            stability_factor = find_sigma_bounds(scm_init, p, ϵ*10)[1]
+            stability_factor = approx_stability_factor(p)
             x_r = approx_sol(p,VtAVis,Vtbis,VtAV,Vtb)
             res_norm = residual_norm_affine_online(res_init, x_r, p)
             err = res_norm / stability_factor
@@ -206,12 +207,21 @@ function GreedyRBAffineLinear(scm_init::SCM_Init,
             x_approx .+= x_r[i] .* V0[i]
         end
         trueerr = norm(x .- x_approx)
-        # Make orthogonal to v1,...,vn
-        for i in eachindex(V0)
-            x .-= (V0[i]'x) .* V0[i]
+        # Break condition
+        if trueerr < ϵ
+            if noise >= 1
+                @printf("k=%d, truth error = %.4e, upperbound error = %.4e\n",k,trueerr,maxerr)
+            end
+            break
         end
-        nx = norm(x)
-        x = x ./ nx
+        # Make orthogonal to v1,...,vn - Modified Gram-Schmidt
+        for i in eachindex(V0)
+            for j in i+1:length(V0)
+                V0[j] .= V0[j] .- dot(V0[i],V0[j]) .* V0[i]
+            end
+            x .= x .- dot(x, V0[i]) .* V0[i]
+        end
+        x = x ./ norm(x)
         for i in eachindex(Ais)
             # Add to each row of VtAVis[i]
             for k in 1:length(res_init.V)
@@ -238,15 +248,61 @@ function GreedyRBAffineLinear(scm_init::SCM_Init,
         if noise >= 1
             @printf("k=%d, truth error = %.4e, upperbound error = %.4e\n",k,trueerr,maxerr)
         end
-        # Break if truth error less than ϵ
-        if trueerr < ϵ
-            break
-        end
     end
     if noise >= 1
-        @printf("----------\nCompleted greedy selection after k=%d iterations\n",length(ps))
+        @printf("----------\nCompleted greedy selection after k=%d iterations\n",k)
     end
-    return Greedy_RB_Affine_Linear(scm_init, res_init, Ais, makeθAi, bis,
-                                   makeθbi, params, ps, V0, VtAVis,
-                                   Vtbis, ϵ, VtAV, Vtb)
+    return Greedy_RB_Affine_Linear(approx_stability_factor, res_init, Ais, 
+                                   makeθAi, bis, makeθbi, params, ps, V0, 
+                                   VtAVis, Vtbis, ϵ, VtAV, Vtb)
+end
+
+"""
+`GreedyRBAffineLinear(scm_init, Ais, makeθAi, bis, makeθbi[, ϵ=1e-2, param_disc=nothing; max_snapshots=-1, noise=1, sigma_eps=1.0, lb_stability=true])`
+
+Constructs a `Greedy_RB_Affine_Linear` object for parametrized problem A(p) x = b(p) with affine parameter
+dependence:
+`A(p) = ∑ makeθAi(p,i) Ais[i]`, and
+`b(p) = ∑ makeθbi(p,i) bis[i]`.
+Uses `scm_init` to approximate the stability factor for each parameter in the discretization, chooses first 
+parameter to be one with smallest stability factor. Afterwards, utilizes the affine decomposition of `A(p)` 
+and `b(p)` to approximate the norm of the residual, and compute upper-bounds for the error:
+`||x - V x_r|| <= ||b(p) - A(p) V x_r|| / σ_min(A(p))`.
+
+Greedily chooses parameters and then forms truth solution for parameter that results in largest upper-bound
+for error. Then computes `||x - V x_r||`, and loops, adding to reduced basis, `V`, until the truth error
+is less than `ϵ`.
+
+If `param_disc` not passed in, then params will be taken from `scm_init`. If `max_snapshots` specified, will
+halt after that many if `ϵ` accuracy not yet reached. `noise` determines amount of printed output, `0` for no
+output, `1` for basic, and `2` for more.
+
+`sigma_eps` determines the relative error allowed between the upper and lower-bound approximations for the
+stability factor. If the relative error is found to be greater than `sigma_eps`, then the stability factor is
+explicitly computed and added to the `scm_init` object.
+
+`lb_stability` defaults to true, and if true, then the lower bound for the stability factor is used
+in the greedy method to ensure sharpness of the upper-bound on the error. If set to false, then will
+use the upper-bound approximate of the stability factor instead.
+"""
+function GreedyRBAffineLinear(scm_init::SCM_Init,
+                              Ais::AbstractVector,
+                              makeθAi::Function,
+                              bis::AbstractVector,
+                              makeθbi::Function,
+                              ϵ=1e-2,
+                              param_disc::Union{Matrix,Vector,Nothing}=nothing;
+                              max_snapshots=-1,
+                              noise=1,
+                              sigma_eps=1.0,
+                              lb_stability=true)
+    if isnothing(param_disc)
+        params = scm_init.tree.data
+    elseif param_disc isa Matrix
+        params = eachcol(param_disc)
+    else
+        params = param_disc
+    end
+    approx_stability_factor(p) = find_sigma_bounds(scm_init, p, sigma_eps)[lb_stability ? 1 : 2]
+    return GreedyRBAffineLinear(params, Ais, makeθAi, bis, makeθbi, approx_stability_factor, ϵ, max_snapshots=max_snapshots, noise=noise)
 end

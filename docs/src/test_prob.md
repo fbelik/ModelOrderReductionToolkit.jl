@@ -27,7 +27,8 @@ where ``u\in\mathbb{R}^n``,  ``A(p)\in\mathbb{R}^{n\times n}`` is a positive-def
 using ModelOrderReductionToolkit
 using Plots
 using Printf
-using Random # hide
+using Random
+using Colors
 gr() # hide
 Random.seed!(1) # hide
 # Boundary conditions
@@ -107,12 +108,15 @@ function makeb(p)
 end
 
 plt = plot(legend=:topleft)
+colors = palette(:tab10)
+ps = []
 for i in 1:10
     p = randP()
+    push!(ps, p)
     A = makeA(p)
     b = makeb(p)
     u = A \ b
-    plot!(xs, u, label=@sprintf("p=[%.2f,%.2f]",p...), alpha=0.5)
+    plot!(xs, u, label=@sprintf("p=[%.2f,%.2f]",p...), c=colors[i])
 end
 title!("Example solutions")
 savefig(plt, "ex1.svg"); nothing # hide
@@ -127,7 +131,7 @@ where ``\{v_i\}_{i=1}^r`` is a chosen basis with ``u_r(p)\in\mathbb{R}^r``, ``V\
 
 Defining ``e(p)=u(p) - u_r(p)`` to be the error in our approximation, and ``r(p)=b(p) - u_r(p)`` to be the residual, one can show that
 ```math
-||e(p)||_2 = ||A(p)^{-1} A(p)(u(p) - u_r(p))||_2 \leq \sigma_{min}(A(p)) ||r(p)||_2.
+||e(p)||_2 = ||A(p)^{-1} A(p)(u(p) - u_r(p))||_2 \leq ||r(p)||_2 / \sigma_{min}(A(p)).
 ```
 
 The goal of this method will be to use *offline* time to approximate the *stability factor*, ``\sigma_{min}(A(p))``, and the norm of the residual, ``||r(p)||_2``.
@@ -163,11 +167,9 @@ With the SCM object initialized, one can call the `GreedyRBAffineLinear` method 
 greedy_sol = GreedyRBAffineLinear(scm, Ais, makeθAi, bis, makeθbi, ϵ_greedy)
 ```
 ```@example 1
-using Colors
-colors = palette(:tab10)
 plt = plot(legend=:topleft)
 for i in 1:10
-    p = randP()
+    p = ps[i]
     A = makeA(p)
     b = makeb(p)
     u = A \ b

@@ -80,13 +80,13 @@ linear programs
 displayed; default 1
 """
 function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
-                        Ais::AbstractVector,
-                        makeθAi::Function,
-                        Mα::Int,
-                        Mp::Int,
-                        ϵ::AbstractFloat;
-                        optimizer=Tulip.Optimizer,
-                        noise::Int=1)
+                            Ais::AbstractVector,
+                            makeθAi::Function,
+                            Mα::Int,
+                            Mp::Int,
+                            ϵ::AbstractFloat;
+                            optimizer=Tulip.Optimizer,
+                            noise::Int=1)
     # Form data tree to search for nearest neighbors
     if typeof(param_disc) <: Vector
         param_disc = reduce(hcat, param_disc)
