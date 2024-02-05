@@ -13,6 +13,9 @@ eim_projector
 ```@docs
 ModelOrderReductionToolkit.Greedy_RB_Affine_Linear
 GreedyRBAffineLinear
+ModelOrderReductionToolkit.greedy_rb_err_data
+ModelOrderReductionToolkit.append_affine_rbm!
+ModelOrderReductionToolkit.init_affine_rbm
 ```
 
 ### Successive constraint method (SCM):

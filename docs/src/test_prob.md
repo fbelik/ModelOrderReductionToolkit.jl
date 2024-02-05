@@ -129,9 +129,9 @@ u(p) \approx V u_r(p) = \sum_{i=1}^r u_r^{(i)}(p) v_i
 ```
 where ``\{v_i\}_{i=1}^r`` is a chosen basis with ``u_r(p)\in\mathbb{R}^r``, ``V\in\mathbb{R}^{n\times r}``, and ``r\ll n``. Additionally, due to the potential computational cost of inverting large ``A(p)``, we wish to minimize the number of times we solve the full-order, *truth*, system.
 
-Defining ``e(p)=u(p) - u_r(p)`` to be the error in our approximation, and ``r(p)=b(p) - u_r(p)`` to be the residual, one can show that
+Defining ``e(p)=u(p) - V u_r(p)`` to be the error in our approximation, and ``r(p)=b(p) - A(p) V u_r(p)`` to be the residual, one can show that
 ```math
-||e(p)||_2 = ||A(p)^{-1} A(p)(u(p) - u_r(p))||_2 \leq ||r(p)||_2 / \sigma_{min}(A(p)).
+||e(p)||_2 = ||A(p)^{-1} A(p)(u(p) - V u_r(p))||_2 \leq ||r(p)||_2 / \sigma_{min}(A(p)).
 ```
 
 The goal of this method will be to use *offline* time to approximate the *stability factor*, ``\sigma_{min}(A(p))``, and the norm of the residual, ``||r(p)||_2``.
@@ -182,7 +182,7 @@ savefig(plt, "ex2.svg"); nothing # hide
 ```
 ![](ex2.svg)
 
-Note that the method `GreedyRBAffineLinear` takes advantage of the affine parameter dependence of both the left and right hand sides for quick evaluation (approximation) of the norm of the residual, and the stability factor, which does not depend on the dimension of the original problem `n`. Only after it has looped through all of the parameters in the discretization, it chooses the one that displays the worst upper-bound error, computes the full-order solution for that parameter, and adds that solution as the next reduced basis element, ``v_i``.
+Note that the method `GreedyRBAffineLinear` takes advantage of the affine parameter dependence of both the left and right hand sides for quick evaluation (approximation) of the norm of the residual, and the stability factor, which does not depend on the dimension of the original problem ``n``. Only after it has looped through all of the parameters in the discretization, it chooses the one that displays the worst upper-bound error, computes the full-order solution for that parameter, and adds that solution as the next reduced basis element, ``v_i``.
 
 
 ### References:

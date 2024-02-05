@@ -52,8 +52,8 @@ end
 
 Method to initialize an `SCM_Init` object to perform the SCM
 on an affinely-parameter-dependent symmetric positive definite matrix
-`A(p) = ∑_{i=1}^QA θ_i(p) A_i` to compute a lower-bound
-approximation to the minimum singular value (or eigenvalue) of `A`.
+`A(p) = ∑ makeθAi(p,i) Ais[i]` to compute a lower-bound
+approximation to the minimum singular value (or eigenvalue) of `A(p)`.
 
 Parameters:
 
@@ -61,10 +61,10 @@ Parameters:
 value in the discretization, or a vector of parameter vectors.
 
 `Ais`: A vector of matrices, of the same dimension, used to construct
-the full matrix `A(p) = ∑_{i=1}^QA makeθAi(p,i) Ais[i]`
+the full matrix `A(p) = ∑ makeθAi(p,i) Ais[i]`
 
 `makeθAi(p,i)`: A function that takes in as input a parameter vector
-and an index such that `A(p) = ∑_{i=1}^QA makeθAi(p,i) Ais[i]`
+and an index such that `A(p) = ∑ makeθAi(p,i) Ais[i]`
 
 `Mα`: Stability constraint constant (a positive integer)
 
@@ -160,7 +160,7 @@ end
 
 Method to initialize an `SCM_Init` object to perform the SCM
 on an affinely-parameter-dependent matrix
-`A(p) = ∑_{i=1}^QA θ_i(p) A_i` to compute a lower-bound
+`A(p) = ∑ makeθAi(p,i) Ais[i]` to compute a lower-bound
 approximation to the minimum singular value of `A`.
 
 Parameters:
@@ -169,10 +169,10 @@ Parameters:
 value in the discretization, or a vector of parameter vectors.
 
 `Ais`: A vector of matrices, of the same dimension, used to construct
-the full matrix `A(p) = ∑_{i=1}^QA makeθAi(p,i) Ais[i]`
+the full matrix `A(p) = ∑ makeθAi(p,i) Ais[i]`
 
 `makeθAi(p,i)`: A function that takes in as input a parameter vector
-and an index such that `A(p) = ∑_{i=1}^QA makeθAi(p,i) Ais[i]`
+and an index such that `A(p) = ∑ makeθAi(p,i) Ais[i]`
 
 `Mα`: Stability constraint constant (a positive integer)
 
@@ -431,7 +431,7 @@ end
 `find_sigma_bounds(scm_init, p, [sigma_eps=1.0])`
 
 Method that performs the online phase of SCM for the matrix
-`A(p) = ∑_{i=1}^QA θ_i(p) A_i` to compute lower and upper-bound
+`A(p) = ∑ makeθAi(p,i) Ais[i]` to compute lower and upper-bound
 approximations to the minimum singular value of `A`. Additional
 optional parameter `sigma_eps` such that if the computed
 ϵ difference of `(σ_UB - σ_LB) / σ_UB` is less than `sigma_eps`, 

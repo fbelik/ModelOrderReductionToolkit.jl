@@ -1,5 +1,4 @@
 module ModelOrderReductionToolkit
-## REMOVE REVISE AND PROGRESSBARS AND PLOTS
 using LinearAlgebra
 include("projections.jl")
 include("greedy_linear_rb.jl")
@@ -15,6 +14,7 @@ export qr_projector
 export eim_projector
 # greedy_linear_rb.jl exports
 export GreedyRBAffineLinear
+export greedy_rb_err_data
 # successive_constraint_spd.jl exports
 export initialize_SCM_SPD
 export initialize_SCM_Noncoercive

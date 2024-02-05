@@ -1,5 +1,4 @@
 using LinearAlgebra
-using ProgressBars
 using StaticArrays
 
 gaussian_rbf(r,ϵ=1) = exp(-(ϵ*r)^2)
@@ -10,7 +9,7 @@ thin_plate_spline_rbf(r) = r^2*log(r)
 bump_rbf(r,ϵ=1) = r >= (1/ϵ) ? 0 : exp(-1/(1-(ϵ*r)^2))
 
 """
-`min_sigma_rbf(params, Ais, makeθAi[, ϕ])`
+`min_sigma_rbf(params, Ais, makeθAi[, ϕ=gaussian_rbf])`
 
 Method to form a interpolatory radial-basis function
 functor to approximate the minimum singular value of a
@@ -48,7 +47,7 @@ function min_sigma_rbf(params::Union{Matrix,Vector},
     end
     # Explicitly compute stability factors
     σ_mins = zeros(NP)
-    for i in ProgressBar(eachindex(params))
+    for i in eachindex(params)
         p = params[i]
         # Compute minimum singular value
         A = makeA(p)
