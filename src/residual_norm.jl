@@ -31,7 +31,7 @@ mutable struct Affine_Residual_Init
 end
 
 """
-`residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, V[, X0=nothing])`
+`residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, V[, X0=nothing, T=Float64])`
 
 Method that constructs the necessary vectors and matrices to
 quickly compute the `X`-norm of the residual, 
@@ -55,23 +55,26 @@ the residual will be computed in the method
 `residual_norm_affine_online`. If `X` remains as `nothing`,
 then will choose it to be the identity matrix to compute the
 2-norm of the residual.
+
+If using complex numbers, specify `T=ComplexF64`.
 """
 function residual_norm_affine_init(Ais::AbstractVector,
                                    makeθAi::Function,
                                    bis::AbstractVector,
                                    makeθbi::Function,
                                    V::AbstractMatrix,
-                                   X::Union{Nothing,Matrix}=nothing)
+                                   X::Union{Nothing,Matrix}=nothing;
+                                   T::Type=Float64)
     n = length(bis[1])
     QA = length(Ais)
     Qb = length(bis)
     # Form X if nothing
-    X0 = Matrix{Float64}(I, (n,n))
+    X0 = Matrix{T}(I, (n,n))
     if !isnothing(X)
         X0 .= X
     end
     # Form c_ij = b_i^T X b_j
-    cijs = Float64[]
+    cijs = T[]
     for i in 1:Qb
         cij = bis[i]' * X0 * bis[i]
         push!(cijs, cij)
@@ -81,7 +84,7 @@ function residual_norm_affine_init(Ais::AbstractVector,
         end
     end
     # Form d_ij = V^T A_i^T X b_j
-    dijs = Vector{Float64}[]
+    dijs = Vector{T}[]
     for Ai in Ais
         for bi in bis
             dij = V' * Ai' * X0 * bi
@@ -90,7 +93,7 @@ function residual_norm_affine_init(Ais::AbstractVector,
     end
     # Form E_ij = V^T A_i^T X A_j V
     # Store E_ijs as vector of vectors
-    Eijs = Vector{Vector{Float64}}[]
+    Eijs = Vector{Vector{T}}[]
     for i in 1:QA
         Eii_mat = V' * Ais[i]' * X0 * Ais[i] * V
         Eii = [@view Eii_mat[:,i] for i in 1:size(Eii_mat)[2]]
@@ -102,19 +105,19 @@ function residual_norm_affine_init(Ais::AbstractVector,
         end
     end
     # Store V as vector of vectors
-    V = Vector{Float64}[V[:,i] for i in 1:size(V)[2]]
+    V = Vector{T}[V[:,i] for i in 1:size(V)[2]]
     return Affine_Residual_Init(cijs, dijs, Eijs, Ais, makeθAi, 
                                 bis, makeθbi, n, QA, Qb, V, X0)
 end
 
 """
-`add_col_to_V(res_init, v)`
+`add_col_to_V!(res_init, v, T)`
 
 Method to add a vector `v` to the columns of the matrix `V`
 in the `Affine_Residual_Init` object, `res_init`, without
-recomputing all terms.
+recomputing all terms. Must specify type `T`.
 """
-function add_col_to_V(res_init::Affine_Residual_Init, v::Vector)
+function add_col_to_V!(res_init::Affine_Residual_Init, v::Vector, T::Type)
     # Add to end of each dij vector
     idx = 1
     for Ai in res_init.Ais
@@ -133,7 +136,7 @@ function add_col_to_V(res_init::Affine_Residual_Init, v::Vector)
             push!(res_init.Eijs[idx][k], newrowval)
         end
         # Form new column of V
-        Eij_col = zeros(length(res_init.V)+1)
+        Eij_col = zeros(T, length(res_init.V)+1)
         for k in 1:length(res_init.V)
             newcolval = res_init.V[k]' * res_init.Ais[i]' * res_init.X' * res_init.Ais[i] * v
             Eij_col[k] = newcolval
@@ -148,7 +151,7 @@ function add_col_to_V(res_init::Affine_Residual_Init, v::Vector)
                 push!(res_init.Eijs[idx][k], newrowval)
             end
             # Form new column of V
-            Eij_col = zeros(length(res_init.V)+1)
+            Eij_col = zeros(T, length(res_init.V)+1)
             for k in 1:length(res_init.V)
                 newcolval = res_init.V[k]' * res_init.Ais[i]' * res_init.X' * res_init.Ais[j] * v
                 Eij_col[k] = newcolval
@@ -184,41 +187,95 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init,
     res = 0.0
     idx = 1
     for i in 1:res_init.Qb
-        res += θbis[i]^2 * res_init.cijs[idx]
+        res += θbis[i] * θbis[i]' * res_init.cijs[idx]
         idx += 1
         for j in i+1:res_init.Qb
-            res += 2 * θbis[i] * θbis[j] * res_init.cijs[idx]
+            cur = θbis[i] * θbis[j]' * res_init.cijs[idx]
+            res += cur + cur'
             idx += 1
         end
     end
     # Sum across dijs
+    cur = 0.0
     idx = 1
     for i in 1:res_init.QA
         for j in 1:res_init.Qb
-            res += -2 * θAis[i] * θbis[j] * (x_r' * res_init.dijs[idx])
+            cur -= θAis[i]' * θbis[j] * (x_r' * res_init.dijs[idx])
             idx += 1
         end
     end
+    res += (cur + cur')
     # Sum across Eijs
     idx = 1
     for i in 1:res_init.QA
         cur = 0.0
         for k in eachindex(x_r)
-            cur += x_r[k] * dot(res_init.Eijs[idx][k], x_r)
+            cur += x_r[k] * (x_r' * res_init.Eijs[idx][k])
         end
-        res += θAis[i]^2 * cur
+        res += θAis[i] * θAis[i]' * cur
         idx += 1
         for j in i+1:res_init.QA
             cur = 0.0
             for k in eachindex(x_r)
-                cur += x_r[k] * dot(res_init.Eijs[idx][k], x_r)
+                cur += x_r[k] * (x_r' * res_init.Eijs[idx][k])
+                # cur2 += cur1'
+                # cur += cur1 + cur2
             end
-            res += 2 * θAis[i] * θAis[j] * cur
+            res += θAis[i]' * θAis[j] * cur
+            res += θAis[i] * θAis[j]' * cur'
+            # res += θAis[i] * θAis[j] * cur
             idx += 1
         end
     end
-    return sqrt(max(0, res))
+    return sqrt(max(0, real(res)))
 end
+
+# function residual_norm_affine_online_real(res_init::Affine_Residual_Init,
+#                                      x_r::AbstractVector,
+#                                      p::AbstractVector)
+#     θbis = [res_init.makeθbi(p,i) for i in 1:res_init.Qb]
+#     θAis = [res_init.makeθAi(p,i) for i in 1:res_init.QA]
+#     # Sum across cijs
+#     res = 0.0
+#     idx = 1
+#     for i in 1:res_init.Qb
+#         res += θbis[i] * θbis[i]' * res_init.cijs[idx]
+#         idx += 1
+#         for j in i+1:res_init.Qb
+#             res += 2 * θbis[i] * θbis[j] * res_init.cijs[idx]
+#             idx += 1
+#         end
+#     end
+#     # Sum across dijs
+#     cur = 0.0
+#     idx = 1
+#     for i in 1:res_init.QA
+#         for j in 1:res_init.Qb
+#             res -= 2 * θAis[i] * θbis[j] * (x_r' * res_init.dijs[idx])
+#             idx += 1
+#         end
+#     end
+#     # Sum across Eijs
+#     idx = 1
+#     for i in 1:res_init.QA
+#         cur = 0.0
+#         for k in eachindex(x_r)
+#             cur += x_r[k] * (x_r' * res_init.Eijs[idx][k])
+#         end
+#         res += θAis[i] * θAis[i] * cur
+#         idx += 1
+#         for j in i+1:res_init.QA
+#             cur = 0.0
+#             for k in eachindex(x_r)
+#                 cur += x_r[k] * (x_r' * res_init.Eijs[idx][k])
+#             end
+#             res += 2 * θAis[i] * θAis[j] * cur
+#             # res += θAis[i] * θAis[j] * cur
+#             idx += 1
+#         end
+#     end
+#     return sqrt(max(0, res))
+# end
 
 """
 `residual_norm_explicit(x_approx, p, makeA, makeb, X=nothing)`

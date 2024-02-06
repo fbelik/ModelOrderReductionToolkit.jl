@@ -25,6 +25,6 @@ export min_sigma_rbf
 export residual_norm_affine_init
 export residual_norm_affine_online
 export residual_norm_explicit
-export add_col_to_V
+export add_col_to_V!
 
 end

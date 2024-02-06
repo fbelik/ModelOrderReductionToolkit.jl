@@ -1,5 +1,6 @@
 using LinearAlgebra
 using StaticArrays
+using Printf
 
 gaussian_rbf(r,ϵ=1) = exp(-(ϵ*r)^2)
 multiquadric_rbf(r,ϵ=1) = sqrt(1+(ϵ*r)^2)
@@ -35,7 +36,8 @@ for each `j`.
 """
 function min_sigma_rbf(params::Union{Matrix,Vector},
                        makeA::Function,
-                       ϕ::Function=gaussian_rbf)
+                       ϕ::Function=gaussian_rbf;
+                       noise=1)
 
     if typeof(params) <: Matrix
         P,NP = size(params)
@@ -47,11 +49,24 @@ function min_sigma_rbf(params::Union{Matrix,Vector},
     end
     # Explicitly compute stability factors
     σ_mins = zeros(NP)
+    if noise >= 1
+        println("Beginning to explicitly compute stability factors")
+        println("-----")
+    end
+    lP = length(params)
+    lPten = ceil(Int, lP / 10)
     for i in eachindex(params)
         p = params[i]
         # Compute minimum singular value
         A = makeA(p)
         σ_mins[i] = svd(A).S[end]
+        if (i % lPten == 0 && noise >= 1)
+            @printf("%.1f%% complete\n", 100*i/lP)
+        end
+    end
+    if noise >= 1
+        println("Completed explicitly computing stability factors")
+        println("-----")
     end
     # Form matrix M, NP+P+1×NP+P+1
     M = zeros(NP+P+1, NP+P+1)

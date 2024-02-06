@@ -20,14 +20,14 @@ struct SCM_Init
     tree::NNTree
     tree_lookup::AbstractVector{Int}
     B::AbstractVector{Tuple{Float64,Float64}}
-    C::AbstractVector{<:AbstractVector{<:Real}}
+    C::AbstractVector{<:AbstractVector}
     C_indices::Vector{Int}
     Mα::Int
     Mp::Int
     ϵ::AbstractFloat
     J::Function
     make_UB::Function
-    Y_UB::AbstractVector{<:AbstractVector{<:Real}}
+    Y_UB::AbstractVector{<:AbstractVector{<:Number}}
     σ_UBs::AbstractVector{Float64}
     spd::Bool
     R::Float64
@@ -104,9 +104,9 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
     B = Tuple{Float64,Float64}[]
     for i in 1:QA
         A = collect(Ais[i])
-        A .= 0.5 .* (A .+ transpose(A))
+        A .= 0.5 .* (A .+ A')
         eigenvalues = eigen(A).values
-        push!(B, (minimum(eigenvalues), maximum(eigenvalues)))
+        push!(B, (minimum(real.(eigenvalues)), maximum(real.(eigenvalues))))
     end
     # Linear program resizing constant
     R = 0.0
@@ -120,10 +120,10 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
         for i in 1:QA
             res += makeθAi(p,i) * y[i]
         end
-        res
+        real(res)
     end
     JH(x) = begin
-        y = Vector{Float64}(undef,QA)
+        y = Vector{eltype(x)}(undef,QA)
         for i in 1:QA
             y[i] = (x' * Ais[i] * x) / (x' * x)
         end
@@ -134,14 +134,14 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
     C = [p1]
     C_indices = [1]
     make_UB(p) = begin
-        A = zeros(size(Ais[1]))
+        A = zeros(eltype(Ais[1]),size(Ais[1]))
         for i in eachindex(Ais)
             A .+= makeθAi(p,i) .* Ais[i]
         end
         eg = eigen(A)
         vec = eg.vectors[:,1]
         y = JH(vec)
-        σ = eg.values[1]
+        σ = minimum(real.(eg.values))
         return (σ, y)
     end
     σ, y = make_UB(p1)
@@ -188,7 +188,7 @@ linear programs
 displayed; default 1
 """
 function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
-                        Ais::AbstractVector{<:AbstractMatrix},
+                        Ais::AbstractVector,
                         makeθAi::Function,
                         Mα::Int,
                         Mp::Int,
@@ -208,10 +208,10 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
     d = length(tree.data[1])
     # Form boundary set by solving eigenvalue problems on each A_i^T A_j
     QA = length(Ais)
-    AiAjs = Matrix{Float64}[]
+    AiAjs = Matrix{eltype(Ais[1])}[]
     for i in 1:QA
         for j in i:QA
-            push!(AiAjs, transpose(Ais[i]) * Ais[j])
+            push!(AiAjs, Ais[i]' * Ais[j])
         end
     end
     QAA = length(AiAjs)
@@ -219,8 +219,8 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
     # Real numerical range of A equals real numerical range of (1/2)(A+A^T)
     for i in 1:QAA
         AA = collect(AiAjs[i])
-        AA .= 0.5 .* (AA .+ transpose(AA))
-        eigenvalues = eigen(AA).values
+        AA .= 0.5 .* (AA .+ AA')
+        eigenvalues = real.(eigen(AA).values)
         push!(B, (minimum(eigenvalues), maximum(eigenvalues)))
     end
     # Linear program resizing constant
@@ -242,10 +242,10 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
                 idx += 1
             end
         end
-        return res
+        return real(res)
     end
     JH(x) = begin
-        y = Vector{Float64}(undef,QAA)
+        y = Vector{eltype(x)}(undef,QAA)
         for idx in 1:QAA
             y[idx] = (x' * AiAjs[idx] * x) / (x' * x)
         end
@@ -256,7 +256,7 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
     C = [p1]
     C_indices = [1]
     make_UB(p) = begin
-        A = zeros(size(Ais[1]))
+        A = zeros(eltype(Ais[1]),size(Ais[1]))
         for i in eachindex(Ais)
             A .+= makeθAi(p,i) .* Ais[i]
         end
@@ -278,13 +278,13 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
 end
 
 """
-`solve_LBs_LP(scm_init, p) = (σ_LB, y_LB)`
+`solve_LBs_LP(scm_init, p[; noise=1]) = (σ_LB, y_LB)`
 
 Helper method that takes in an `SCM_Init_SPD` object and a parameter vector
 `p`, and sets up and solves a linear program to compute a lower-bound
 `σ_LB` to the minimum singular value of `A(p)` along with the associated vector `y_LB`.
 """
-function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector{<:Real})
+function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector{<:Real}; noise=1)
     model = Model(scm_init.optimizer)
     try
         set_attribute(model, "IPM_IterationsLimit", 1000000)
@@ -317,12 +317,21 @@ function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector{<:Real})
     @objective(model, Min, scm_init.J(p,y))
     optimize!(model)
     if termination_status(model) != OPTIMAL
-        println("Warning: Linear Program Solution not optimal, possibly choose different optimizer")
+        if noise >= 1
+            println("Warning: Linear Program Solution not optimal, possibly choose different optimizer")
+        end
         σ_LB = 0.0
+        y_LB = zeros(scm_init.QA)
+    elseif objective_value(model) < 0.0
+        if noise >= 1
+            println("Warning: Lower bound found to be negative")
+        end
+        σ_LB = 0.0
+        y_LB = zeros(scm_init.QA)
     else
         σ_LB = objective_value(model) * scm_init.R
+        y_LB = [value(y[i]) for i in 1:scm_init.QA] .* scm_init.R
     end
-    y_LB = [value(y[i]) for i in 1:scm_init.QA] .* scm_init.R
     return (σ_LB, y_LB)
 end
 
@@ -341,7 +350,7 @@ function form_upperbound_set!(scm_init::SCM_Init; noise::Int=1)
         println("----------")
     end
     while length(scm_init.C) < length(scm_init.tree.data)
-        ϵ_k = 0
+        ϵ_k = -1.0
         σ_UB_k = 0
         σ_LB_k = 0
         p_k = zeros(scm_init.d)
@@ -353,10 +362,10 @@ function form_upperbound_set!(scm_init::SCM_Init; noise::Int=1)
                 continue
             end
             ## Solve linear program to find σ_LB, y_LB
-            σ_LB, y_LB = solve_LBs_LP(scm_init, p_disc)
+            σ_LB, y_LB = solve_LBs_LP(scm_init, p_disc, noise=noise)
             ## Loop through Y_{UB} to find σ_UB
             σ_UB = Inf
-            y_UB = zeros(scm_init.QA)
+            y_UB = zeros(eltype(scm_init.Y_UB[1]),scm_init.QA)
             for y in scm_init.Y_UB
                 Jval = scm_init.J(p_disc, y)
                 if Jval < σ_UB
@@ -369,20 +378,8 @@ function form_upperbound_set!(scm_init::SCM_Init; noise::Int=1)
                 ϵ_disc = (σ_UB - σ_LB) / σ_UB
             else
                 σ_LB = max(0.0, σ_LB)
+                σ_UB = max(0.0, σ_UB)
                 ϵ_disc = 1 - sqrt(σ_LB) / sqrt(σ_UB)
-            end
-            if ϵ_disc < 0.5
-                if noise >= 2
-                    @printf("ϵ_k found to be %.4e\n",ϵ_disc)
-                    @printf("p_disc = %s\n",p_disc)
-                    if scm_init.spd
-                        @printf("UBs are %.6f, %s\n",σ_UB,y_UB)
-                        @printf("LBs are %.6f, %s\n",σ_LB,y_LB)
-                    else
-                        @printf("UBs are %.6f, %s\n",sqrt(σ_UB),y_UB)
-                        @printf("LBs are %.6f, %s\n",sqrt(σ_LB),y_LB)
-                    end
-                end
             end
             if ϵ_disc > ϵ_k
                 if noise >= 2
@@ -428,7 +425,7 @@ function form_upperbound_set!(scm_init::SCM_Init; noise::Int=1)
 end
 
 """
-`find_sigma_bounds(scm_init, p, [sigma_eps=1.0])`
+`find_sigma_bounds(scm_init, p[, sigma_eps=1.0; noise=0])`
 
 Method that performs the online phase of SCM for the matrix
 `A(p) = ∑ makeθAi(p,i) Ais[i]` to compute lower and upper-bound
@@ -440,7 +437,7 @@ the minimum singular value is directly computed, appended to the
 scm_init's upper-bound set, and returned as both the lower and upper-bounds.
 """
 function find_sigma_bounds(scm_init::SCM_Init, p::AbstractVector{<:Real}, 
-                           sigma_eps::Float64=1.0)
+                           sigma_eps::Float64=1.0; noise=0)
     # Loop through Y_{UB} to find upper-bound
     σ_UB = Inf
     for y in scm_init.Y_UB
@@ -453,7 +450,7 @@ function find_sigma_bounds(scm_init::SCM_Init, p::AbstractVector{<:Real},
         σ_UB = sqrt(σ_UB)
     end
     # Find lower bound through linear program
-    σ_LB, y_LB = solve_LBs_LP(scm_init, p)
+    σ_LB, y_LB = solve_LBs_LP(scm_init, p, noise=noise)
     if !scm_init.spd
         σ_LB = sqrt(max(0.0,σ_LB))
     end

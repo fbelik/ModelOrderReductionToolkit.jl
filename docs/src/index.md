@@ -37,7 +37,7 @@ min_sigma_rbf
 ```@docs
 ModelOrderReductionToolkit.Affine_Residual_Init
 residual_norm_affine_init
-add_col_to_V
+add_col_to_V!
 residual_norm_affine_online
 residual_norm_explicit
 ```
