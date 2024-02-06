@@ -65,8 +65,8 @@ function min_sigma_rbf(params::Union{Matrix,Vector},
         end
     end
     if noise >= 1
-        println("Completed explicitly computing stability factors")
         println("-----")
+        println("Completed explicitly computing stability factors")
     end
     # Form matrix M, NP+P+1×NP+P+1
     M = zeros(NP+P+1, NP+P+1)
