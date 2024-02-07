@@ -30,7 +30,9 @@ ModelOrderReductionToolkit.solve_LBs_LP
 
 ### Radial-basis interpolatory stability factor
 ```@docs
+ModelOrderReductionToolkit.Sigma_Min_RBF
 min_sigma_rbf
+update_sigma_rbf!
 ```
 
 ### Computation of norm of residual

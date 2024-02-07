@@ -20,7 +20,9 @@ export initialize_SCM_SPD
 export initialize_SCM_Noncoercive
 export find_sigma_bounds
 # stability_radial_basis.jl exports
+export Sigma_Min_RBF
 export min_sigma_rbf
+export update_sigma_rbf!
 # residual_norm.jl exports
 export residual_norm_affine_init
 export residual_norm_affine_online

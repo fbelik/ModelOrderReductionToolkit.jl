@@ -13,8 +13,12 @@ and methods necessary for running the successive constraint
 method on an affinely-parameter-dependent matrix
 `A(p) = ∑_{i=1}^QA θ_i(p) A_i` to compute a lower-bound
 approximation to the minimum singular value of `A`.
+
+It is additionally a functor as calling `scm_init(p)` on
+a parameter vector `p` will return the lower-bound estimate
+of the minimum singular value of `A(p)`.
 """
-struct SCM_Init
+struct SCM_Init <: Function
     d::Int
     QA::Int
     tree::NNTree
@@ -45,6 +49,24 @@ function Base.show(io::Core.IO, scm::SCM_Init)
     res *= @sprintf("\nMα=%d, Mp=%d, ϵ=%.4e.",scm.Mα,scm.Mp,scm.ϵ)
 
     print(io, res)
+end
+
+"""
+`(scm_init::SCM_Init)(p::AbstractVector{<:Real}; noise=0)`
+
+Method that performs the online phase of SCM for the matrix
+`A(p) = ∑ makeθAi(p,i) Ais[i]` to compute a lower-bound
+approximation to the minimum singular value of `A`.
+"""
+function (scm_init::SCM_Init)(p::AbstractVector{<:Real}; noise=0)
+    # Find lower bound through linear program
+    σ_LB, _ = solve_LBs_LP(scm_init, p, noise=noise)
+    # In case of round error
+    σ_LB = max(0.0,σ_LB)
+    if !scm_init.spd
+        σ_LB = sqrt(σ_LB)
+    end
+    return σ_LB
 end
 
 """
