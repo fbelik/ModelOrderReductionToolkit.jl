@@ -154,7 +154,7 @@ scm = initialize_SCM_SPD(params, Ais, makeθAi, Ma, Mp, ϵ_SCM)
 As can be seen in the below example, the method `find_sigma_bounds(scm,p)` returns both an upper-bound and a lower-bound estimate for the stability factor with a relative error on the order of `ϵ_SCM` as long as it is not too far from a parameter value in the discretization, `params`.
 ```@example 1
 p = randP()
-find_sigma_bounds(scm, randP())
+find_sigma_bounds(scm, p)
 ```
 Can also directly use `scm` as a function to approximate the lower bound
 ```@example 1
