@@ -7,13 +7,13 @@ include("residual_norm.jl")
 `Greedy_RB_Affine_Linear`
 
 Struct for containing initialized greedy reduced-basis method
-for parametrized problem A(p) x = b(p) with affine parameter
+for parametrized problem A(p) u = b(p) with affine parameter
 dependence
 `A(p) = ∑ makeθAi(p,i) Ais[i]`, and
 `b(p) = ∑ makeθbi(p,i) bis[i]`.
 
 Uses Galerkin projection onto span of columns of `V`, 
-`V' A(p) V x_r = V' b(p)`, with `V x_r ≈ x = A(p)^(-1) b(p)`.
+`V' A(p) V u_r = V' b(p)`, with `V u_r ≈ u = A(p)^(-1) b(p)`.
 
 Given a new parameter vector, `p`, and an object
 `greedy_sol::Greedy_RB_Affine_Linear`, form the reduced
@@ -41,8 +41,8 @@ function Base.show(io::Core.IO, greedy_sol::Greedy_RB_Affine_Linear)
     res *= "    A(p) = ∑ makeθAi(p,i) Ais[i],\n"
     res *= "    b(p) = ∑ makeθbi(p,i) bis[i].\n"
     res *= "Galerkin projection is used onto an $(length(greedy_sol.V)) dimensional space:\n"
-    res *= "    V' A(p) V x_r = V' b(p),\n"
-    res *= "    V x_r ≈ x = A(p)^(-1) b(p)."
+    res *= "    V' A(p) V u_r = V' b(p),\n"
+    res *= "    V u_r ≈ u = A(p)^(-1) b(p)."
     print(io, res)
 end
 
@@ -65,15 +65,15 @@ function (greedy_sol::Greedy_RB_Affine_Linear)(p, full=true)
     for i in eachindex(greedy_sol.Vtbis)
         greedy_sol.Vtb .+= greedy_sol.makeθbi(p,i) .* greedy_sol.Vtbis[i]
     end
-    x_r = greedy_sol.VtAV \ greedy_sol.Vtb
-    x_approx = zeros(eltype(x_r),length(greedy_sol.V[1]))
+    u_r = greedy_sol.VtAV \ greedy_sol.Vtb
+    u_approx = zeros(eltype(u_r),length(greedy_sol.V[1]))
     if full
-        for i in eachindex(x_r)
-            x_approx .+= x_r[i] * greedy_sol.V[i]
+        for i in eachindex(u_r)
+            u_approx .+= u_r[i] * greedy_sol.V[i]
         end
-        return x_approx
+        return u_approx
     end
-    return x_r
+    return u_r
 end
 
 """
@@ -138,7 +138,7 @@ end
 """
 `GreedyRBAffineLinear(param_disc, Ais, makeθAi, bis, makeθbi, approx_stability_factor[, ϵ=1e-2, param_disc=nothing; max_snapshots=-1, noise=1])`
 
-Constructs a `Greedy_RB_Affine_Linear` object for parametrized problem `A(p) x(p) = b(p)` with affine parameter
+Constructs a `Greedy_RB_Affine_Linear` object for parametrized problem `A(p) y(p) = b(p)` with affine parameter
 dependence:
 `A(p) = ∑ makeθAi(p,i) Ais[i]`, and
 `b(p) = ∑ makeθbi(p,i) bis[i]`.
@@ -147,10 +147,10 @@ dependence:
 Uses the function `approx_stability_factor` to approximate the stability factor for each parameter in the discretization, 
 chooses first parameter to be one with smallest stability factor. Afterwards, utilizes the affine decomposition of `A(p)` 
 and `b(p)` to compute the norm of the residual, and compute upper-bounds for the error:
-`||x - V x_r|| <= ||b(p) - A(p) V x_r|| / σ_min(A(p))`.
+`||u - V u_r|| <= ||b(p) - A(p) V u_r|| / σ_min(A(p))`.
 
 Greedily chooses parameters and then forms truth solution for parameter that results in largest upper-bound
-for error. Then computes `||x - V x_r||`, and loops, adding to reduced basis, `V`, until the truth error
+for error. Then computes `||u - V u_r||`, and loops, adding to reduced basis, `V`, until the truth error
 is less than `ϵ`.
 
 If `max_snapshots` specified, will halt after that many if `ϵ` accuracy not yet reached. `noise` determines amount 
@@ -203,9 +203,9 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
             maxerr = err
         end
     end
-    x = truth_sol(p1)
-    x = x ./ norm(x)
-    V, VtAVis, VtAV, Vtbis, Vtb = init_affine_rbm(x, Ais, bis, T)
+    u = truth_sol(p1)
+    u = u ./ norm(u)
+    V, VtAVis, VtAV, Vtbis, Vtb = init_affine_rbm(u, Ais, bis, T)
     approx_sol(p,VtAVis,Vtbis, VtAV, Vtb) = begin
         VtAV .= 0.0
         for i in eachindex(VtAVis)
@@ -221,7 +221,7 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
         return VtAV \ Vtb
     end
     # Initialize res_init to compute residual norm
-    res_init = residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, reshape(x, (length(x),1)), T=T)
+    res_init = residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, reshape(u, (length(u),1)), T=T)
     if noise >= 1
         print("k=1, first parameter value chosen, initialized for greedy search\n")
     end
@@ -240,8 +240,8 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
                 continue
             end
             stability_factor = approx_stability_factor(p)
-            x_r = approx_sol(p,VtAVis,Vtbis,VtAV,Vtb)
-            res_norm = residual_norm_affine_online(res_init, x_r, p)
+            u_r = approx_sol(p,VtAVis,Vtbis,VtAV,Vtb)
+            res_norm = residual_norm_affine_online(res_init, u_r, p)
             err = res_norm / stability_factor
             if err > maxerr
                 maxp = p
@@ -249,13 +249,13 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
             end
         end
         # Compute full solution to add to V
-        x = truth_sol(maxp)
-        x_r = approx_sol(maxp,VtAVis,Vtbis,VtAV,Vtb)
-        x_approx = zeros(T, length(x))
+        u = truth_sol(maxp)
+        u_r = approx_sol(maxp,VtAVis,Vtbis,VtAV,Vtb)
+        u_approx = zeros(T, length(u))
         for i in eachindex(V)
-            x_approx .+= x_r[i] .* V[i]
+            u_approx .+= u_r[i] .* V[i]
         end
-        trueerr = norm(x .- x_approx)
+        trueerr = norm(u .- u_approx)
         # Break condition
         if trueerr < ϵ
             if noise >= 1
@@ -265,11 +265,11 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
         end
         # Make orthogonal to v1,...,vn - Modified Gram-Schmidt
         for i in eachindex(V)
-            x .= x .- (V[i]' * x) .* V[i]
+            u .= u .- (V[i]' * u) .* V[i]
         end
-        x .= x ./ norm(x)
-        VtAV, Vtb = append_affine_rbm!(x, V, Ais, VtAVis, bis, Vtbis, T)
-        add_col_to_V!(res_init, x, T)
+        u .= u ./ norm(u)
+        VtAV, Vtb = append_affine_rbm!(u, V, Ais, VtAVis, bis, Vtbis, T)
+        add_col_to_V!(res_init, u, T)
         push!(ps, maxp)
         if noise >= 1
             @printf("k=%d, truth error = %.4e, upperbound error = %.4e\n",k,trueerr,maxerr)
@@ -284,60 +284,9 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
 end
 
 """
-`GreedyRBAffineLinear(scm_init, Ais, makeθAi, bis, makeθbi[, ϵ=1e-2, param_disc=nothing; max_snapshots=-1, noise=1, sigma_eps=1.0, lb_stability=true])`
-
-Constructs a `Greedy_RB_Affine_Linear` object for parametrized problem A(p) x = b(p) with affine parameter
-dependence:
-`A(p) = ∑ makeθAi(p,i) Ais[i]`, and
-`b(p) = ∑ makeθbi(p,i) bis[i]`.
-Uses `scm_init` to approximate the stability factor for each parameter in the discretization, chooses first 
-parameter to be one with smallest stability factor. Afterwards, utilizes the affine decomposition of `A(p)` 
-and `b(p)` to approximate the norm of the residual, and compute upper-bounds for the error:
-`||x - V x_r|| <= ||b(p) - A(p) V x_r|| / σ_min(A(p))`.
-
-Greedily chooses parameters and then forms truth solution for parameter that results in largest upper-bound
-for error. Then computes `||x - V x_r||`, and loops, adding to reduced basis, `V`, until the truth error
-is less than `ϵ`.
-
-If `param_disc` not passed in, then params will be taken from `scm_init`. If `max_snapshots` specified, will
-halt after that many if `ϵ` accuracy not yet reached. `noise` determines amount of printed output, `0` for no
-output, `1` for basic, and `2` for more.
-
-`sigma_eps` determines the relative error allowed between the upper and lower-bound approximations for the
-stability factor. If the relative error is found to be greater than `sigma_eps`, then the stability factor is
-explicitly computed and added to the `scm_init` object.
-
-`lb_stability` defaults to true, and if true, then the lower bound for the stability factor is used
-in the greedy method to ensure sharpness of the upper-bound on the error. If set to false, then will
-use the upper-bound approximate of the stability factor instead.
-"""
-function GreedyRBAffineLinear(scm_init::SCM_Init,
-                              Ais::AbstractVector,
-                              makeθAi::Function,
-                              bis::AbstractVector,
-                              makeθbi::Function,
-                              ϵ=1e-2,
-                              param_disc::Union{Matrix,Vector,Nothing}=nothing;
-                              T::Type=Float64,
-                              max_snapshots=-1,
-                              noise=1,
-                              sigma_eps=1.0,
-                              lb_stability=true)
-    if isnothing(param_disc)
-        params = scm_init.tree.data
-    elseif param_disc isa Matrix
-        params = eachcol(param_disc)
-    else
-        params = param_disc
-    end
-    approx_stability_factor(p) = find_sigma_bounds(scm_init, p, sigma_eps)[lb_stability ? 1 : 2]
-    return GreedyRBAffineLinear(params, Ais, makeθAi, bis, makeθbi, approx_stability_factor, ϵ, max_snapshots=max_snapshots, noise=noise, T=T)
-end
-
-"""
 `greedy_rb_err_data(param_disc,Ais,makeθAi,bis,makeθbi,approx_stability_factor[,num_snapshots=10,ϵ=1e-2;noise=1)`
 
-Generates error data for parametrized problem `A(p) x(p) = b(p)` with affine parameter
+Generates error data for parametrized problem `A(p) u(p) = b(p)` with affine parameter
 dependence:
 `A(p) = ∑ makeθAi(p,i) Ais[i]`, and
 `b(p) = ∑ makeθbi(p,i) bis[i]`.
@@ -436,18 +385,18 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
             maxerr_ub = err
         end
     end
-    x = truth_sols[maxpi]
-    x = x ./ norm(x)
-    V1, VtAVis1, VtAV1, Vtbis1, Vtb1 = init_affine_rbm(x, Ais, bis, T)
-    res_init1 = residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, reshape(x, (length(x),1)), T=T)
+    u = truth_sols[maxpi]
+    u = u ./ norm(u)
+    V1, VtAVis1, VtAV1, Vtbis1, Vtb1 = init_affine_rbm(u, Ais, bis, T)
+    res_init1 = residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, reshape(u, (length(u),1)), T=T)
     # Strong greedy algorithm
     qr_proj = qr_projector(truth_sols_mat, num_snapshots)
-    x = qr_proj.M[:,1]
-    V2, VtAVis2, VtAV2, Vtbis2, Vtb2 = init_affine_rbm(x, Ais, bis, T)
+    u = qr_proj.M[:,1]
+    V2, VtAVis2, VtAV2, Vtbis2, Vtb2 = init_affine_rbm(u, Ais, bis, T)
     # POD/PCA
     pca_proj = pca_projector(truth_sols_mat, num_snapshots)
-    x = pca_proj.M[:,1]
-    V3, VtAVis3, VtAV3, Vtbis3, Vtb3 = init_affine_rbm(x, Ais, bis, T)
+    u = pca_proj.M[:,1]
+    V3, VtAVis3, VtAV3, Vtbis3, Vtb3 = init_affine_rbm(u, Ais, bis, T)
 
     approx_sol(p,VtAVis,Vtbis, VtAV, Vtb) = begin
         VtAV .= 0.0
@@ -482,14 +431,14 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
                 continue
             end
             stability_factor = approx_stability_factor(p)
-            x_r = approx_sol(p,VtAVis1,Vtbis1,VtAV1,Vtb1)
-            res_norm = residual_norm_affine_online(res_init1, x_r, p)
+            u_r = approx_sol(p,VtAVis1,Vtbis1,VtAV1,Vtb1)
+            res_norm = residual_norm_affine_online(res_init1, u_r, p)
             err = res_norm / stability_factor
-            x_approx = zeros(T, length(x))
+            u_approx = zeros(T, length(u))
             for i in eachindex(V1)
-                x_approx .+= x_r[i] .* V1[i]
+                u_approx .+= u_r[i] .* V1[i]
             end
-            trutherr = norm(truth_sols[i] .- x_approx)
+            trutherr = norm(truth_sols[i] .- u_approx)
             if err > maxerr_ub
                 maxp = p
                 maxerr_ub = err
@@ -504,33 +453,33 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
         push!(ret_data[:weak_greedy_true], maxerr_truth)
         push!(ret_data[:weak_greedy_true_ub], maxerr_truth_ub)
         # Compute full solution to add to V
-        x = truth_sol(maxp)
-        x_r = approx_sol(maxp,VtAVis1,Vtbis1,VtAV1,Vtb1)
+        u = truth_sol(maxp)
+        u_r = approx_sol(maxp,VtAVis1,Vtbis1,VtAV1,Vtb1)
         # Make orthogonal to v1,...,vn - Modified Gram-Schmidt
         for i in eachindex(V1)
-            x .= x .- (V1[i]' * x) .* V1[i]
+            u .= u .- (V1[i]' * u) .* V1[i]
         end
-        x .= x ./ norm(x)
-        VtAV1, Vtb1 = append_affine_rbm!(x, V1, Ais, VtAVis1, bis, Vtbis1, T)
-        add_col_to_V!(res_init1, x, T)
+        u .= u ./ norm(u)
+        VtAV1, Vtb1 = append_affine_rbm!(u, V1, Ais, VtAVis1, bis, Vtbis1, T)
+        add_col_to_V!(res_init1, u, T)
         push!(ps, maxp)
         
         # Strong greedy algorithm
         maxerr_truth_ub = 0
         maxerr_proj = 0
         for (i,p) in enumerate(params)
-            x_r = approx_sol(p,VtAVis2,Vtbis2,VtAV2,Vtb2)
-            x_approx = zeros(T, length(x))
+            u_r = approx_sol(p,VtAVis2,Vtbis2,VtAV2,Vtb2)
+            u_approx = zeros(T, length(u))
             for i in eachindex(V2)
-                x_approx .+= x_r[i] .* V2[i]
+                u_approx .+= u_r[i] .* V2[i]
             end
-            trutherr = norm(truth_sols[i] .- x_approx)
+            trutherr = norm(truth_sols[i] .- u_approx)
             if trutherr > maxerr_truth_ub
                 maxerr_truth_ub = trutherr
             end
             M = qr_proj.M[:,1:(k-1)]
-            x_proj = M * (M' * truth_sols[i])
-            projerr = norm(truth_sols[i] .- x_proj)
+            u_proj = M * (M' * truth_sols[i])
+            projerr = norm(truth_sols[i] .- u_proj)
             if projerr > maxerr_proj
                 maxerr_proj = projerr
             end
@@ -545,18 +494,18 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
         maxerr_truth_ub = 0
         maxerr_proj = 0
         for (i,p) in enumerate(params)
-            x_r = approx_sol(p,VtAVis3,Vtbis3,VtAV3,Vtb3)
-            x_approx = zeros(T, length(x))
+            u_r = approx_sol(p,VtAVis3,Vtbis3,VtAV3,Vtb3)
+            u_approx = zeros(T, length(u))
             for i in eachindex(V3)
-                x_approx .+= x_r[i] .* V3[i]
+                u_approx .+= u_r[i] .* V3[i]
             end
-            trutherr = norm(truth_sols[i] .- x_approx)
+            trutherr = norm(truth_sols[i] .- u_approx)
             if trutherr > maxerr_truth_ub
                 maxerr_truth_ub = trutherr
             end
             M = pca_proj.M[:,1:(k-1)]
-            x_proj = M * (M' * truth_sols[i])
-            projerr = norm(truth_sols[i] .- x_proj)
+            u_proj = M * (M' * truth_sols[i])
+            projerr = norm(truth_sols[i] .- u_proj)
             if projerr > maxerr_proj
                 maxerr_proj = projerr
             end

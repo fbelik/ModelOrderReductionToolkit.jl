@@ -6,14 +6,14 @@ using StaticArrays
 
 A struct for containing the necessary vectors
 and matrices for quickly compute the `X`-norm of the
-residual, `r(x_r,p) = A(p) (x - V x_r) = b(p) - A(p) V x_r`,
+residual, `r(u_r,p) = A(p) (u - V u_r) = b(p) - A(p) V u_r`,
 by taking advantage of affine parameter dependence of `A(p)`
 and `b(p)`.
 
-Here, `x` solves `A(p) x = b(p)` with `A` and `b`
+Here, `u` solves `A(p) u = b(p)` with `A` and `b`
 having affine parameter dependence, and `V` is
 a matrix with columns defining bases for approximation
-spaces `x ≈ V x_r`.
+spaces `u ≈ V u_r`.
 """
 mutable struct Affine_Residual_Init
     cijs::Vector
@@ -35,7 +35,7 @@ end
 
 Method that constructs the necessary vectors and matrices to
 quickly compute the `X`-norm of the residual, 
-`r(x_r,p) = A(p) (x - V x_r) = b(p) - A(p) V x_r`,
+`r(u_r,p) = A(p) (u - V u_r) = b(p) - A(p) V u_r`,
 by taking advantage of affine parameter dependence of `A(p)`
 and `b(p)`.
 
@@ -47,8 +47,8 @@ the affine construction of `b` is given by
 `b(p) = ∑_{i=1}^Qb makeθbi(p,i) * bis[i]`.
 
 Additionally, pass in a matrix `V` which contains as columns
-a basis for a reduced space, `x ≈ V x_r` with the dimension
-of `x_r` less than that of `x`.
+a basis for a reduced space, `u ≈ V u_r` with the dimension
+of `u_r` less than that of `u`.
 
 Optionally pass in a matrix `X` from which the `X`-norm of
 the residual will be computed in the method
@@ -166,20 +166,20 @@ function add_col_to_V!(res_init::Affine_Residual_Init, v::Vector, T::Type)
 end
 
 """
-`residual_norm_affine_online(res_init, x_r, p)`
+`residual_norm_affine_online(res_init, u_r, p)`
 
 Method that given `res_init`, an `Affine_Residual_Init`
 object, computes the `X`-norm of the residual, 
-`r(x_r,p) = A(p) (x - V x_r) = b(p) - A(p) V x_r`,
+`r(u_r,p) = A(p) (u - V u_r) = b(p) - A(p) V u_r`,
 by taking advantage of affine parameter dependence of `A(p)`
 and `b(p)`.
 
 Pass as input the `Affine_Residual_Init` object, `res_init`,
-a reduced vector `x_r`, and the corresponding parameter
+a reduced vector `u_r`, and the corresponding parameter
 vector `p`.
 """
 function residual_norm_affine_online(res_init::Affine_Residual_Init,
-                                     x_r::AbstractVector,
+                                     u_r::AbstractVector,
                                      p::AbstractVector)
     θbis = [res_init.makeθbi(p,i) for i in 1:res_init.Qb]
     θAis = [res_init.makeθAi(p,i) for i in 1:res_init.QA]
@@ -200,7 +200,7 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init,
     idx = 1
     for i in 1:res_init.QA
         for j in 1:res_init.Qb
-            cur -= θAis[i]' * θbis[j] * (x_r' * res_init.dijs[idx])
+            cur -= θAis[i]' * θbis[j] * (u_r' * res_init.dijs[idx])
             idx += 1
         end
     end
@@ -209,83 +209,34 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init,
     idx = 1
     for i in 1:res_init.QA
         cur = 0.0
-        for k in eachindex(x_r)
-            cur += x_r[k] * (x_r' * res_init.Eijs[idx][k])
+        for k in eachindex(u_r)
+            cur += u_r[k] * (u_r' * res_init.Eijs[idx][k])
         end
         res += θAis[i] * θAis[i]' * cur
         idx += 1
         for j in i+1:res_init.QA
             cur = 0.0
-            for k in eachindex(x_r)
-                cur += x_r[k] * (x_r' * res_init.Eijs[idx][k])
-                # cur2 += cur1'
-                # cur += cur1 + cur2
+            for k in eachindex(u_r)
+                cur += u_r[k] * (u_r' * res_init.Eijs[idx][k])
             end
             res += θAis[i]' * θAis[j] * cur
             res += θAis[i] * θAis[j]' * cur'
-            # res += θAis[i] * θAis[j] * cur
             idx += 1
         end
     end
     return sqrt(max(0, real(res)))
 end
 
-# function residual_norm_affine_online_real(res_init::Affine_Residual_Init,
-#                                      x_r::AbstractVector,
-#                                      p::AbstractVector)
-#     θbis = [res_init.makeθbi(p,i) for i in 1:res_init.Qb]
-#     θAis = [res_init.makeθAi(p,i) for i in 1:res_init.QA]
-#     # Sum across cijs
-#     res = 0.0
-#     idx = 1
-#     for i in 1:res_init.Qb
-#         res += θbis[i] * θbis[i]' * res_init.cijs[idx]
-#         idx += 1
-#         for j in i+1:res_init.Qb
-#             res += 2 * θbis[i] * θbis[j] * res_init.cijs[idx]
-#             idx += 1
-#         end
-#     end
-#     # Sum across dijs
-#     cur = 0.0
-#     idx = 1
-#     for i in 1:res_init.QA
-#         for j in 1:res_init.Qb
-#             res -= 2 * θAis[i] * θbis[j] * (x_r' * res_init.dijs[idx])
-#             idx += 1
-#         end
-#     end
-#     # Sum across Eijs
-#     idx = 1
-#     for i in 1:res_init.QA
-#         cur = 0.0
-#         for k in eachindex(x_r)
-#             cur += x_r[k] * (x_r' * res_init.Eijs[idx][k])
-#         end
-#         res += θAis[i] * θAis[i] * cur
-#         idx += 1
-#         for j in i+1:res_init.QA
-#             cur = 0.0
-#             for k in eachindex(x_r)
-#                 cur += x_r[k] * (x_r' * res_init.Eijs[idx][k])
-#             end
-#             res += 2 * θAis[i] * θAis[j] * cur
-#             # res += θAis[i] * θAis[j] * cur
-#             idx += 1
-#         end
-#     end
-#     return sqrt(max(0, res))
-# end
 
 """
-`residual_norm_explicit(x_approx, p, makeA, makeb, X=nothing)`
+`residual_norm_explicit(u_approx, p, makeA, makeb, X=nothing)`
 
 Method that computes the `X`-norm of the residual, 
-`r(x_r,p) = A(p) (x - x_approx) = b(p) - A(p) x_approx` explicitly
-where `x` is the solution to `A(p) x = b(p)`, and `x_approx` is
-an approximation, `x ≈ x_approx`.
+`r(u_r,p) = A(p) (u - u_approx) = b(p) - A(p) u_approx` explicitly
+where `u` is the solution to `A(p) u = b(p)`, and `u_approx` is
+an approximation, `u ≈ u_approx`.
 
-Pass as input the approximation vector `x_approx`, the
+Pass as input the approximation vector `u_approx`, the
 corresponding parameter, `p`, the method `makeA(p)` for
 constructing the matrix `A(p)`, and the method `makeb(p)`
 for constructing the vector `b(p)`.
@@ -295,15 +246,15 @@ the residual will be computed. If `X` remains as `nothing`,
 then will choose it to be the identity matrix to compute the
 2-norm of the residual.
 """
-function residual_norm_explicit(x_approx::AbstractVector,
+function residual_norm_explicit(u_approx::AbstractVector,
                                 p::AbstractVector,
                                 makeA::Function,
                                 makeb::Function,
                                 X::Union{Nothing,Matrix}=nothing)
-    # Residual defined to be A(p)(x-Vx_r) = b(p) - A(p)Vx_r
+    # Residual defined to be A(p)(x-Vu_r) = b(p) - A(p)Vu_r
     b = makeb(p)
     A = makeA(p)
-    r = b .- A*x_approx
+    r = b .- A*u_approx
     if isnothing(X)
         return sqrt(r'r)
     else
@@ -312,14 +263,14 @@ function residual_norm_explicit(x_approx::AbstractVector,
 end
 
 """
-`residual_norm_explicit(x_approx, p, Ais, makeθAi, bis, makeθbi, X=nothing)`
+`residual_norm_explicit(u_approx, p, Ais, makeθAi, bis, makeθbi, X=nothing)`
 
 Method that computes the `X`-norm of the residual, 
-`r(x_r,p) = A(p) (x - x_approx) = b(p) - A(p) x_approx` explicitly
-where `x` is the solution to `A(p) x = b(p)`, and `x_approx` is
-an approximation, `x ≈ x_approx`.
+`r(u_r,p) = A(p) (u - u_approx) = b(p) - A(p) u_approx` explicitly
+where `x` is the solution to `A(p) u = b(p)`, and `u_approx` is
+an approximation, `u ≈ u_approx`.
 
-Pass as input the approximation vector `x_approx`, the
+Pass as input the approximation vector `u_approx`, the
 corresponding parameter, `p`, a vector of matrices `Ais`, 
 and a function `makeθAi` such that the affine construction 
 of `A` is given by `A(p) = ∑_{i=1}^QA makeθAi(p,i) * Ais[i]`, 
@@ -332,7 +283,7 @@ the residual will be computed. If `X` remains as `nothing`,
 then will choose it to be the identity matrix to compute the
 2-norm of the residual.
 """
-function residual_norm_explicit(x_approx::AbstractVector,
+function residual_norm_explicit(u_approx::AbstractVector,
                                 p::AbstractVector,
                                 Ais::AbstractVector,
                                 makeθAi::Function,
@@ -353,5 +304,5 @@ function residual_norm_explicit(x_approx::AbstractVector,
         end
         b
     end
-    return residual_norm_explicit(x_approx, p, makeA, makeb, X)
+    return residual_norm_explicit(u_approx, p, makeA, makeb, X)
 end

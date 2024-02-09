@@ -20,9 +20,9 @@ are affinely parameter dependent diffusion coefficient and forcing terms respect
 
 We can discretize and explicitly solve this problem by using finite differences, the problem can be rewritten as
 ```math
-A(p) u = b(p)
+A(p) u(p) = b(p)
 ```
-where ``u\in\mathbb{R}^n``,  ``A(p)\in\mathbb{R}^{n\times n}`` is a positive-definite matrix, and both ``A(p)`` and ``b(p)\in\mathbb{R}^n`` have affine parameter dependence.
+where ``u(p)\in\mathbb{R}^n``,  ``A(p)\in\mathbb{R}^{n\times n}`` is a positive-definite matrix, and both ``A(p)`` and ``b(p)\in\mathbb{R}^n`` have affine parameter dependence.
 ```@example 1
 using ModelOrderReductionToolkit
 using Plots
@@ -178,9 +178,9 @@ for i in 1:10
     A = makeA(p)
     b = makeb(p)
     u = A \ b
-    u_r = greedy_sol(p)
+    u_approx = greedy_sol(p)
     plot!(xs, u, c=colors[i],label=(i==1 ? "truth" : false))
-    plot!(xs, u_r, c=colors[i], ls=:dash,label=(i==1 ? "greedy" : false))
+    plot!(xs, u_approx, c=colors[i], ls=:dash,label=(i==1 ? "greedy" : false))
 end
 title!("Example solutions and greedy solutions")
 savefig(plt, "ex2.svg"); nothing # hide
