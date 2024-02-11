@@ -280,7 +280,7 @@ savefig(plt, "rbm_tut6.svg"); nothing # hide
 ```
 ![](rbm_tut6.svg)
 
-This procedure also performs very well. We may expect the POD/PCA algorithm to be a bit more accurate/general as it can choose basis elements that are not in the columns of ``S``.
+This procedure also performs quite well. We may expect the POD/PCA algorithm to be a bit more accurate/general as it can choose basis elements that are not in the columns of ``S``.
 
 ### Weak Greedy Algorithm
 
