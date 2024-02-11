@@ -54,6 +54,7 @@ where ``VV^TS`` is the projection of ``S`` onto the columns of ``V``.
 
 ```@setup 1
 using ModelOrderReductionToolkit
+using LinearAlgebra
 using Plots
 using Colors
 using Random
@@ -157,7 +158,7 @@ S
 ```@example 1
 plt = plot()
 for i in 1:P
-    plot!(S[:,i],label=false,alpha=0.25)
+    plot!(xs, S[:,i],label=false,alpha=0.25)
 end
 title!("Solution Set")
 savefig(plt, "rbm_tut1.svg"); nothing # hide
@@ -189,9 +190,9 @@ idxs = [rand(1:P) for i in 1:6]
 for i in 1:6
     idx = idxs[i]
     p = params[idx]
-    plot!(S[:,idx], c=colors[i], label=false)
+    plot!(xs, S[:,idx], c=colors[i], label=false)
     u_approx = V * V' * S[:,idx]
-    plot!(u_approx, c=colors[i], label=false, ls=:dash)
+    plot!(xs, u_approx, c=colors[i], label=false, ls=:dash)
 end
 title!("Truth and projected POD solutions")
 savefig(plt, "rbm_tut3.svg"); nothing # hide
@@ -209,9 +210,9 @@ colors = palette(:tab10)
 for i in 1:6
     idx = idxs[i]
     p = params[idx]
-    plot!(S[:,idx], c=colors[i], label=false)
+    plot!(xs, S[:,idx], c=colors[i], label=false)
     u_r = (V' * makeA(p) * V) \ (V' * makeb(p))
-    plot!(V * u_r, c=colors[i], label=false, ls=:dash)
+    plot!(xs, V * u_r, c=colors[i], label=false, ls=:dash)
 end
 title!("Truth and projected Galerkin POD solutions")
 savefig(plt, "rbm_tut4.svg"); nothing # hide
@@ -244,7 +245,7 @@ s_i^{(j)} = s_i^{(j-1)} - (v_j^T s_i^{(j-1)}) v_j,\quad i=1,\ldots,P.
 Note that this procedure is exactly like performing a pivoted QR factorization on the matrix ``S``. Let's form this reduced basis of dimension ``4``:
 ```@example 1
 r = 4
-Q,_,_ = svd(S)
+Q,_,_ = qr(S, LinearAlgebra.ColumnNorm())
 V = Q[:,1:r]
 nothing; # hide
 ```
@@ -255,9 +256,9 @@ plt = plot()
 for i in 1:6
     idx = idxs[i]
     p = params[idx]
-    plot!(S[:,idx], c=colors[i], label=false)
+    plot!(xs, S[:,idx], c=colors[i], label=false)
     u_approx = V * V' * S[:,idx]
-    plot!(u_approx, c=colors[i], label=false, ls=:dash)
+    plot!(xs, u_approx, c=colors[i], label=false, ls=:dash)
 end
 title!("Truth and projected QR solutions")
 savefig(plt, "rbm_tut5.svg"); nothing # hide
@@ -270,9 +271,9 @@ plt = plot()
 for i in 1:6
     idx = idxs[i]
     p = params[idx]
-    plot!(S[:,idx], c=colors[i], label=false)
+    plot!(xs, S[:,idx], c=colors[i], label=false)
     u_r = (V' * makeA(p) * V) \ (V' * makeb(p))
-    plot!(V * u_r, c=colors[i], label=false, ls=:dash)
+    plot!(xs, V * u_r, c=colors[i], label=false, ls=:dash)
 end
 title!("Truth and projected Galerkin QR solutions")
 savefig(plt, "rbm_tut6.svg"); nothing # hide
@@ -317,9 +318,9 @@ plt = plot()
 for i in 1:6
     idx = idxs[i]
     p = params[idx]
-    plot!(S[:,idx], c=colors[i], label=false)
+    plot!(xs, S[:,idx], c=colors[i], label=false)
     u_r = greedy_sol(p,false) # full=false, size r vector instead of N
-    plot!(V * u_r, c=colors[i], label=false, ls=:dash)
+    plot!(xs, V * u_r, c=colors[i], label=false, ls=:dash)
 end
 title!("Truth and weak greedy solutions")
 savefig(plt, "rbm_tut7.svg"); nothing # hide
@@ -369,6 +370,107 @@ A few things to note with these curves.
 4) Although `wg truth ub` is above `sg Galerkin`, telling us that we are not making optimal greedy choices, it decays at the same exponential rate telling us that the weak greedy algorithm is still making good choices.
 
 In conclusion, the **weak greedy algorithm** takes advantage of the affine parameter dependence of ``A(p)`` and ``b(p)``, and uses an upperbound error approximator to produce a reduced basis that approximates solutions nearly as well as the strong greedy algorithm and the POD/PCA algorithm.
+
+In order to replicate the code in this tutorial, you will need to run the following setup code which is hidden from the start of this tutorial:
+```julia
+using ModelOrderReductionToolkit
+using LinearAlgebra
+using Plots
+using Colors
+using Random
+Random.seed!(1)
+gr()
+# Boundary conditions
+uleft = 0.0
+uright = 1.0
+p_len = 2
+κ_i(i,x) = 1.1 .+ sin.(2π * i * x)
+κ(x,p) = sum([p[i] * κ_i(i,x) for i in 1:p_len])
+# Derivative of diffusion coefficient
+κp_i(i,x) = 2π * i * cos.(2π * i * x)
+κp(x,p) = sum([p[i] * κp_i(i,x) for i in 1:p_len])
+# Parameter dependent source term
+f_i(i,x) = i == 1 ? (x .> 0.5) .* 10.0 : 20 .* sin.(2π * (i-1) * x)
+f(x,p) = f_i(1,x) .+ sum([p[i-1] * f_i(i,x) for i in 2:p_len+1])
+# Space setup
+h = 1e-3
+xs = Vector((0:h:1)[2:end-1])
+N = length(xs)
+# Helper to generate random parameter vector
+randP() = 0.1 .+ 2 .* rand(p_len)
+# Ai matrices
+function makeAi(i)
+    A = zeros(N,N)
+    for j in 1:N
+        A[j,j]   = 2*κ_i(i,xs[j]) / h^2
+        if j<N
+            A[j,j+1] = -κp_i(i,xs[j]) / (2h) - κ_i(i,xs[j]) / h^2
+        end
+        if j>1
+            A[j,j-1] = κp_i(i,xs[j]) / (2h) - κ_i(i,xs[j]) / h^2
+        end
+    end
+    return A
+end
+Ais = Matrix{Float64}[]
+for i in 1:p_len
+    push!(Ais, makeAi(i))
+end
+# θAis
+function makeθAi(p,i)
+    return p[i]
+end
+function makeA(p)
+    A = zeros(size(Ais[1]))
+    for i in eachindex(Ais)
+        A .+= makeθAi(p,i) .* Ais[i]
+    end
+    return A
+end
+# bi vectors
+function makebi(i)
+    b = f_i(i,xs)
+    if i > 1
+        b[1] -= uleft * (κp_i(i,xs[1]) / (2h) - κ_i(i,xs[1]) / h^2)
+        b[end] -= uright * (-κp_i(i,xs[N]) / (2h) - κ_i(i,xs[N]) / h^2)
+    end
+    return b
+end
+bis = Vector{Float64}[]
+for i in 1:p_len+1
+    push!(bis, makebi(i))
+end
+# θbis
+function makeθbi(p,i)
+    if i == 1
+        return 1.0
+    else
+        return p[i-1]
+    end
+end
+function makeb(p)
+    b = zeros(size(bis[1]))
+    for i in eachindex(bis)
+        b .+= makeθbi(p,i) .* bis[i]
+    end
+    return b
+end
+
+params = []
+for p1 in range(0.1,2.1,10)
+    for p2 in range(0.1,2.1,10)
+        push!(params, [p1,p2])
+    end
+end
+P = length(params)
+
+S = zeros(N, P)
+for i in 1:P
+    p = params[i]
+    u = makeA(p) \ makeb(p)
+    S[:,i] .= u
+end
+```
 
 ### References:
 1. D.B.P. Huynh, G. Rozza, S. Sen, A.T. Patera. A successive constraint linear optimization method for lower bounds of parametric coercivity and inf–sup stability constants. Comptes Rendus Mathematique. Volume 345, Issue 8. 2007. Pages 473-478. https://doi.org/10.1016/j.crma.2007.09.019.
