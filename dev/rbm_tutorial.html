@@ -1,25 +1,25 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>RBM Tutorial · ModelOrderReductionToolkit.jl</title><meta name="title" content="RBM Tutorial · ModelOrderReductionToolkit.jl"/><meta property="og:title" content="RBM Tutorial · ModelOrderReductionToolkit.jl"/><meta property="twitter:title" content="RBM Tutorial · ModelOrderReductionToolkit.jl"/><meta name="description" content="Documentation for ModelOrderReductionToolkit.jl."/><meta property="og:description" content="Documentation for ModelOrderReductionToolkit.jl."/><meta property="twitter:description" content="Documentation for ModelOrderReductionToolkit.jl."/><script data-outdated-warner src="assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="assets/documenter.js"></script><script src="search_index.js"></script><script src="siteinfo.js"></script><script src="../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="index.html">ModelOrderReductionToolkit.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="index.html">Docstrings</a></li><li><a class="tocitem" href="test_prob.html">Test Problem</a></li><li class="is-active"><a class="tocitem" href="rbm_tutorial.html">RBM Tutorial</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href="rbm_tutorial.html">RBM Tutorial</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href="rbm_tutorial.html">RBM Tutorial</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/fbelik/ModelOrderReductionToolkit.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/fbelik/ModelOrderReductionToolkit.jl/blob/master/docs/src/rbm_tutorial.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Reduced-Basis-Method-Tutorial"><a class="docs-heading-anchor" href="#Reduced-Basis-Method-Tutorial">Reduced Basis Method Tutorial</a><a id="Reduced-Basis-Method-Tutorial-1"></a><a class="docs-heading-anchor-permalink" href="#Reduced-Basis-Method-Tutorial" title="Permalink"></a></h1><p>This tutorial follows closely to the book Reduced Basis Methods for Partial Differential Equations by Quateroni, Alfie, Manzoni, and Negri. For more information, see their text, source 2.</p><h3 id="Problem-formulation-and-motivation"><a class="docs-heading-anchor" href="#Problem-formulation-and-motivation">Problem formulation and motivation</a><a id="Problem-formulation-and-motivation-1"></a><a class="docs-heading-anchor-permalink" href="#Problem-formulation-and-motivation" title="Permalink"></a></h3><p>In this tutorial, we consider scalar, linear, elliptic, parametrized PDEs of the form</p><p class="math-container">\[\mathcal{L}(u(x,p),p) = f(x,p)\]</p><p>where <span>$p$</span> is some parameter (vector), and the solution <span>$u$</span> depends on a spatial variable <span>$x$</span> and the parameter. We are interested in such problems specifically as upon discretization, say with finite elements, the discrete problem can be written in the form</p><p class="math-container">\[A(p) u(p) = b(p)\]</p><p>where <span>$A(p)\in\mathbb{R}^{N\times N}$</span>, <span>$u(p)\in\mathbb{R}^N$</span>, and <span>$b(p)\in\mathbb{R}^N$</span>. Additionally, we will assume <strong>affine</strong> parameter dependence, i.e., we can write <span>$A(p)$</span> as </p><p class="math-container">\[A(p) = \sum_{i=1}^{QA} \theta_i^A(p) A_i,\]</p><p>and <span>$b(p)$</span> as</p><p class="math-container">\[b(p) = \sum_{i=1}^{Qb} \theta_i^b(p) b_i.\]</p><p>Note that if a problem does not match this form, there exist algorithms ((D)EIM) to convert the problem to this form.</p><p>Upon sufficient discretization, we expect <span>$N$</span> to be large, and thus the problem of inverting <span>$A(p)$</span> several times for different parameter values can be expensive. A model order reduction technique is to build a reduced basis (RB) approximation to the solution. To do this, we wish to build an appropriate <span>$r$</span> dimensional RB space, with <span>$r \ll N$</span>, on wish to use Galerkin projection. </p><p>Specifically, given linearly independent (assumed orthogonal) basis vectors to this space, <span>$\{v_i\}_{i=1}^r$</span>, we construct the RB space matrix</p><p class="math-container">\[V = \begin{bmatrix} | &amp; | &amp;  &amp; | \\ v_1 &amp; v_2 &amp; \cdots &amp; v_r \\  | &amp; | &amp;  &amp; |  \end{bmatrix} \in \mathbb{R}^{N \times r}\]</p><p>such that the problem can be approximated by</p><p class="math-container">\[V^T A(p) V u_r(p) = V^T b,\quad u(p) \approx V u_r(p).\]</p><p>where now the task is to invert the much smaller, <span>$r\times r$</span> matrix, <span>$V^T A(p) V$</span> to form <span>$u_r(p)$</span>, and then the solution is approximated by <span>$V u_r(p)$</span>. Additionally, due to the affine parameter dependence of <span>$A(p)$</span>, we need not store any terms that depend on <span>$N$</span>, rather we only need to store the matrices <span>$V^T A_i V \in \mathbb{R}^{r\times r}$</span> for <span>$i=1,\ldots,QA$</span>.</p><p>Now, suppose we wished to solve an inverse problem, such as finding the parameter vector <span>$p^*$</span> that yields some some &#39;optimal&#39; solution <span>$u^*(p)$</span>. Or suppose that we wish to perform a sensitivity analysis of <span>$u(p)$</span> on several different parameter values <span>$p$</span>. These tasks would typically require us to solve the full-order problem a large number of times which may be computationally expensive. </p><p>If we are willing to spend <strong>offline</strong> time to generate an RB space, <span>$V$</span>, with dimension <span>$r\ll N$</span>, then we can much more efficiently spend time <strong>online</strong> computing the Galerkin projected solution, <span>$V u_r(p)$</span>, at a fraction of a cost of computing the full-order solution.</p><h3 id="Proper-Orthogonal-Decomposition/Principal-Component-Analysis"><a class="docs-heading-anchor" href="#Proper-Orthogonal-Decomposition/Principal-Component-Analysis">Proper Orthogonal Decomposition/Principal Component Analysis</a><a id="Proper-Orthogonal-Decomposition/Principal-Component-Analysis-1"></a><a class="docs-heading-anchor-permalink" href="#Proper-Orthogonal-Decomposition/Principal-Component-Analysis" title="Permalink"></a></h3><p>For now, we will assume a discrete set of parameters <span>$\mathcal{P} = \{p_1,\ldots,p_P\}$</span> from which we wish to make estimations on. Additionally, we will suppose we know all of the full-order solutions, and store them in the solution matrix</p><p class="math-container">\[S = \begin{bmatrix} | &amp; | &amp;  &amp; | \\ u(p_1) &amp; u(p_2) &amp; \cdots &amp; u(p_P) \\  | &amp; | &amp;  &amp; |  \end{bmatrix} \in \mathbb{R}^{N \times P}.\]</p><p>Note that computing this full matrix may be very expensive if <span>$N$</span> is large.</p><p>We know from the Schmidt-Eckart-Young theorem that the <span>$r$</span>-dimensional linear subspace that captures the most &quot;energy&quot; from the solutions in <span>$S$</span> (per the Frobenius norm) is the one spanned by the first <span>$r$</span> left singular vectors of <span>$S$</span>. More specifically, if we denote <span>$V\in\mathbb{R}^{N\times r}$</span> to be the matrix whose <span>$r$</span> columns are the first <span>$r$</span> left singular vectors of <span>$S$</span>, and let <span>$\sigma_1\geq\sigma_2\geq\ldots\geq\sigma_N$</span> be the singular values of <span>$S$</span>, then we can write that</p><p class="math-container">\[||S - VV^TS||_F = \min_{\text{rank}(B)\leq r} ||A - B||_F = \sqrt{\sum_{i=r+1}^N \sigma_i^2}.\]</p><p>where <span>$VV^TS$</span> is the projection of <span>$S$</span> onto the columns of <span>$V$</span>.</p><p>Suppose that we have the following solution set with <span>$N=999$</span> and <span>$P=100$</span> (see test problem):</p><pre><code class="language-julia hljs">S</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">999×100 Matrix{Float64}:
- 0.0123327  0.00680447  0.00506434  …  0.0032755   0.00320785  0.00314697
- 0.0245608  0.0135412   0.0100759      0.0065242   0.0063889   0.00626716
- 0.0366861  0.0202115   0.0150357      0.00974639  0.00954343  0.00936084
- 0.0487101  0.0268162   0.0199445      0.0129423   0.0126717   0.0124283
- 0.0606343  0.0333567   0.0248031      0.0161123   0.015774    0.0154698
- 0.0724603  0.0398339   0.0296124   …  0.0192566   0.0188506   0.0184857
- 0.0841895  0.0462489   0.0343733      0.0223754   0.0219018   0.0214761
- 0.0958234  0.0526027   0.0390864      0.025469    0.0249278   0.0244414
- 0.107364   0.0588963   0.0437526      0.0285377   0.0279289   0.0273819
- 0.118811   0.0651308   0.0483727      0.0315817   0.0309054   0.0302977
+ 0.0123326  0.00680448  0.00506437  …  0.00327552  0.00320788  0.003147
+ 0.0245608  0.0135413   0.010076       0.00652426  0.00638896  0.00626722
+ 0.0366861  0.0202115   0.0150358      0.00974647  0.00954351  0.00936093
+ 0.04871    0.0268163   0.0199446      0.0129424   0.0126718   0.0124284
+ 0.0606343  0.0333568   0.0248032      0.0161124   0.0157742   0.01547
+ 0.0724602  0.039834    0.0296126   …  0.0192567   0.0188508   0.0184859
+ 0.0841894  0.046249    0.0343735      0.0223756   0.021902    0.0214763
+ 0.0958233  0.0526028   0.0390867      0.0254692   0.0249281   0.0244417
+ 0.107363   0.0588964   0.0437529      0.0285379   0.0279292   0.0273822
+ 0.118811   0.0651309   0.048373       0.0315819   0.0309056   0.030298
  ⋮                                  ⋱                          
  1.09186    1.03317     1.01503     …  0.977602    0.977592    0.977587
- 1.08114    1.02908     1.01301        0.979854    0.979846    0.979842
+ 1.08114    1.02908     1.01301        0.979854    0.979846    0.979843
  1.07047    1.02501     1.01099        0.982085    0.982079    0.982077
  1.05985    1.02097     1.00899        0.984295    0.984291    0.98429
- 1.04928    1.01694     1.00699        0.986485    0.986482    0.986481
- 1.03876    1.01294     1.005       …  0.988654    0.988652    0.988652
- 1.02829    1.00896     1.00302        0.990804    0.990803    0.990803
- 1.01786    1.005       1.00105        0.992933    0.992932    0.992933
- 1.00747    1.00105     0.999087       0.995042    0.995042    0.995042</code></pre><pre><code class="language-julia hljs">plt = plot()
+ 1.04928    1.01695     1.00699        0.986485    0.986482    0.986482
+ 1.03876    1.01294     1.00501     …  0.988655    0.988653    0.988653
+ 1.02829    1.00896     1.00303        0.990804    0.990803    0.990803
+ 1.01786    1.005       1.00105        0.992933    0.992933    0.992933
+ 1.00747    1.00105     0.999087       0.995043    0.995042    0.995042</code></pre><pre><code class="language-julia hljs">plt = plot()
 for i in 1:P
     plot!(xs, S[:,i],label=false,alpha=0.25)
 end
@@ -66,7 +66,7 @@ for i in 1:6
 end
 title!(&quot;Truth and projected Galerkin QR solutions&quot;)</code></pre><p><img src="rbm_tut6.svg" alt/></p><p>This procedure also performs quite well. We may expect the POD/PCA algorithm to be a bit more accurate/general as it can choose basis elements that are not in the columns of <span>$S$</span>.</p><h3 id="Weak-Greedy-Algorithm"><a class="docs-heading-anchor" href="#Weak-Greedy-Algorithm">Weak Greedy Algorithm</a><a id="Weak-Greedy-Algorithm-1"></a><a class="docs-heading-anchor-permalink" href="#Weak-Greedy-Algorithm" title="Permalink"></a></h3><p>Now, one downside of the above procedures was that we needed the matrix of full-order solutions ahead of time to perform either the SVD or QR factorizations. If our model was very computationally expensive, we would not want to have to do this. This is where the <strong>weak greedy algorithm</strong> is useful. It is again a greedy algorithm as we will be choosing &quot;columns&quot; greedily, but we wish to not have to construct all columns directly.</p><p>Suppose now, instead of having access to the columns <span>$s_i$</span> which correspond to the full-order solutions <span>$u(p_i)$</span>, we only have access to the parameter values <span>$p_i$</span>. One can show that there exists an upper-bound on projection error, given by</p><p class="math-container">\[||u(p) - V u_r(p)|| = ||A(p)^{-1} b(p) - V u_r(p)|| \leq \frac{||b(p) - A(p) V u_r(p)||}{\sigma_{min}(A(p))}\]</p><p>where <span>$\sigma_{min}(A(p))$</span> is the minimum singular value of <span>$A(p)$</span>. Note that this upperbound on the error does not depend on the full order solution, <span>$u(p)$</span>. So, we loop through each parameter vector <span>$p_i$</span>, and select the one, <span>$p^*$</span> that yields the highest upper-bound error. We then form the full-order solution <span>$u(p_i)$</span>, normalize it, and append it as a column of <span>$V$</span>. Note that unlike in the strong algorithm, since we are not using true error, we are not guaranteed to choose the next &quot;best&quot; column of <span>$V$</span>. However, if we are computing a reduced basis of size <span>$r$</span>, then we only need to call the full-order model <span>$r$</span> times.</p><p>We now need a method to approximate (a lowerbound of ) <span>$\sigma_{min}(A(p))$</span>, and then the numerator of the above can be computed explicitly. One way of doing this is through the <strong>successive constraint method</strong> (SCM). This method takes advantage of the affine parameter dependence of <span>$A(p)$</span>, see source 1. To compute a successive constraint object, taking note that our <span>$A(p)$</span> is a positive definite matrix, we use the following code:</p><pre><code class="language-julia hljs">using ModelOrderReductionToolkit
 Ma = 50; Mp = 15; ϵ_SCM = 1e-2;
-scm = initialize_SCM_SPD(params, Ais, makeθAi, Ma, Mp, ϵ_SCM)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(::ModelOrderReductionToolkit.SCM_Init) (generic function with 1 method)</code></pre><p>We can then create a lower-bound approximation of the singular value of <span>$A(p)$</span> by calling it directly:</p><pre><code class="language-julia hljs">scm(randP())</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">27.297622628345987</code></pre><p>With this in place, we have enough to construct the weak greedy RB method. Note that the method below requires each of the <code>Ais</code>, <code>bis</code>, and methods <code>makeθAi</code> and <code>makeθbi</code> for the affine construction of <code>A(p)</code> and <code>b(p)</code>. This is so that looping over the parameter set does not depend on the large dimension <code>N</code>.</p><pre><code class="language-julia hljs">ϵ_greedy = 1e-1
+scm = initialize_SCM_SPD(params, Ais, makeθAi, Ma, Mp, ϵ_SCM)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(::ModelOrderReductionToolkit.SCM_Init) (generic function with 1 method)</code></pre><p>We can then create a lower-bound approximation of the singular value of <span>$A(p)$</span> by calling it directly:</p><pre><code class="language-julia hljs">scm(randP())</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">27.297808122343334</code></pre><p>With this in place, we have enough to construct the weak greedy RB method. Note that the method below requires each of the <code>Ais</code>, <code>bis</code>, and methods <code>makeθAi</code> and <code>makeθbi</code> for the affine construction of <code>A(p)</code> and <code>b(p)</code>. This is so that looping over the parameter set does not depend on the large dimension <code>N</code>.</p><pre><code class="language-julia hljs">ϵ_greedy = 1e-1
 r = 4
 greedy_sol = GreedyRBAffineLinear(params, Ais, makeθAi, bis, makeθbi, scm, ϵ_greedy, max_snapshots=r)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Initialized reduced basis method for parametrized problem A(p) x = b(p) with affine parameter dependence:
     A(p) = ∑ makeθAi(p,i) Ais[i],
@@ -74,26 +74,26 @@ greedy_sol = GreedyRBAffineLinear(params, Ais, makeθAi, bis, makeθbi, scm, ϵ_
 Galerkin projection is used onto an 4 dimensional space:
     V&#39; A(p) V u_r = V&#39; b(p),
     V u_r ≈ u = A(p)^(-1) b(p).</code></pre><p>We can access the greedily chosen reduced basis by calling (note that for computational purposes, <span>$V$</span> is stored as a vector of vectors instead of a matrix)</p><pre><code class="language-julia hljs">V = reduce(hcat, greedy_sol.V)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">999×4 Matrix{Float64}:
- 0.00011594   -3.99214e-5   0.000289962  0.000183846
- 0.000230898  -8.05179e-5   0.000578681  0.000364539
- 0.000344888  -0.000121781  0.000866157  0.00054213
- 0.000457926  -0.000163704  0.00115239   0.000716668
- 0.000570027  -0.000206279  0.00143739   0.000888204
- 0.000681203  -0.0002495    0.00172114   0.00105679
- 0.00079147   -0.00029336   0.00200367   0.00122246
- 0.000900841  -0.000337853  0.00228495   0.00138528
- 0.00100933   -0.000382974  0.00256501   0.0015453
- 0.00111695   -0.000428718  0.00284384   0.00170255
+ 0.00011594   -3.99159e-5   0.000289963  0.000183849
+ 0.000230899  -8.05069e-5   0.000578683  0.000364545
+ 0.00034489   -0.000121765  0.00086616   0.000542139
+ 0.000457928  -0.000163683  0.0011524    0.00071668
+ 0.000570029  -0.000206253  0.00143739   0.000888219
+ 0.000681206  -0.000249468  0.00172115   0.0010568
+ 0.000791473  -0.000293323  0.00200367   0.00122248
+ 0.000900845  -0.000337811  0.00228496   0.00138531
+ 0.00100933   -0.000382927  0.00256502   0.00154532
+ 0.00111695   -0.000428666  0.00284385   0.00170258
  ⋮                                       
- 0.0102646     0.102716     0.0530253    0.0282975
- 0.0101638     0.103206     0.0531786    0.028259
- 0.0100635     0.103693     0.0533309    0.0282188
- 0.00996372    0.104176     0.0534823    0.028177
- 0.00986436    0.104655     0.0536326    0.0281337
- 0.00976545    0.105131     0.0537819    0.0280888
- 0.00966697    0.105604     0.0539302    0.0280425
- 0.00956892    0.106074     0.0540776    0.0279947
- 0.0094713     0.10654      0.0542239    0.0279455</code></pre><p>We can now visualize these solutions by calling <code>greedy_sol(p)</code> on a paramater vector <code>p</code>.</p><pre><code class="language-julia hljs">plt = plot()
+ 0.0102647     0.102717     0.0530238    0.0282971
+ 0.0101639     0.103207     0.0531772    0.0282585
+ 0.0100636     0.103694     0.0533295    0.0282183
+ 0.00996378    0.104177     0.0534808    0.0281765
+ 0.00986442    0.104656     0.0536311    0.0281332
+ 0.0097655     0.105132     0.0537804    0.0280884
+ 0.00966702    0.105605     0.0539288    0.028042
+ 0.00956898    0.106075     0.0540761    0.0279943
+ 0.00947135    0.106541     0.0542224    0.0279451</code></pre><p>We can now visualize these solutions by calling <code>greedy_sol(p)</code> on a paramater vector <code>p</code>.</p><pre><code class="language-julia hljs">plt = plot()
 for i in 1:6
     idx = idxs[i]
     p = params[idx]
@@ -110,6 +110,7 @@ plot!(data[:basis_dim], data[:weak_greedy_true_ub], label=&quot;wg truth ub&quot
 using LinearAlgebra
 using Plots
 using Colors
+using SparseArrays
 using Random
 Random.seed!(1)
 gr()
@@ -118,29 +119,27 @@ uleft = 0.0
 uright = 1.0
 p_len = 2
 κ_i(i,x) = 1.1 .+ sin.(2π * i * x)
-κ(x,p) = sum([p[i] * κ_i(i,x) for i in 1:p_len])
-# Derivative of diffusion coefficient
-κp_i(i,x) = 2π * i * cos.(2π * i * x)
-κp(x,p) = sum([p[i] * κp_i(i,x) for i in 1:p_len])
+κ(x,p) = sum([p[i] * κ_i(i,x) for i in 1:p_len]) 
 # Parameter dependent source term
 f_i(i,x) = i == 1 ? (x .&gt; 0.5) .* 10.0 : 20 .* sin.(2π * (i-1) * x)
 f(x,p) = f_i(1,x) .+ sum([p[i-1] * f_i(i,x) for i in 2:p_len+1])
 # Space setup
 h = 1e-3
 xs = Vector((0:h:1)[2:end-1])
+xhalfs = ((0:h:1)[1:end-1] .+ (0:h:1)[2:end]) ./ 2
 N = length(xs)
 # Helper to generate random parameter vector
 randP() = 0.1 .+ 2 .* rand(p_len)
 # Ai matrices
 function makeAi(i)
-    A = zeros(N,N)
+    A = spzeros(N,N)
     for j in 1:N
-        A[j,j]   = 2*κ_i(i,xs[j]) / h^2
+        A[j,j]   = (κ_i(i, xhalfs[j]) + κ_i(i, xhalfs[j+1])) / h^2
         if j&lt;N
-            A[j,j+1] = -κp_i(i,xs[j]) / (2h) - κ_i(i,xs[j]) / h^2
+            A[j,j+1] = -1 * κ_i(i, xhalfs[j+1]) / h^2
         end
         if j&gt;1
-            A[j,j-1] = κp_i(i,xs[j]) / (2h) - κ_i(i,xs[j]) / h^2
+            A[j,j-1] = -1 * κ_i(i, xhalfs[j]) / h^2
         end
     end
     return A
@@ -164,9 +163,9 @@ end
 function makebi(i)
     b = f_i(i,xs)
     if i &gt; 1
-        b[1] -= uleft * (κp_i(i,xs[1]) / (2h) - κ_i(i,xs[1]) / h^2)
-        b[end] -= uright * (-κp_i(i,xs[N]) / (2h) - κ_i(i,xs[N]) / h^2)
-    end
+            b[1] += uleft * κ_i(i, xhalfs[1]) / h^2
+            b[end] += uright * κ_i(i, xhalfs[end]) / h^2
+        end
     return b
 end
 bis = Vector{Float64}[]
@@ -202,4 +201,4 @@ for i in 1:P
     p = params[i]
     u = makeA(p) \ makeb(p)
     S[:,i] .= u
-end</code></pre><h3 id="References:"><a class="docs-heading-anchor" href="#References:">References:</a><a id="References:-1"></a><a class="docs-heading-anchor-permalink" href="#References:" title="Permalink"></a></h3><ol><li>D.B.P. Huynh, G. Rozza, S. Sen, A.T. Patera. A successive constraint linear optimization method for lower bounds of parametric coercivity and inf–sup stability constants. Comptes Rendus Mathematique. Volume 345, Issue 8. 2007. Pages 473-478. https://doi.org/10.1016/j.crma.2007.09.019.</li><li>Quarteroni, Alfio, Andrea Manzoni, and Federico Negri. Reduced Basis Methods for Partial Differential Equations. Vol. 92. UNITEXT. Cham: Springer International Publishing, 2016. http://link.springer.com/10.1007/978-3-319-15431-2.</li></ol></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="test_prob.html">« Test Problem</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="auto">Automatic (OS)</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.2.1 on <span class="colophon-date" title="Sunday 11 February 2024 19:47">Sunday 11 February 2024</span>. Using Julia version 1.10.0.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end</code></pre><h3 id="References:"><a class="docs-heading-anchor" href="#References:">References:</a><a id="References:-1"></a><a class="docs-heading-anchor-permalink" href="#References:" title="Permalink"></a></h3><ol><li>D.B.P. Huynh, G. Rozza, S. Sen, A.T. Patera. A successive constraint linear optimization method for lower bounds of parametric coercivity and inf–sup stability constants. Comptes Rendus Mathematique. Volume 345, Issue 8. 2007. Pages 473-478. https://doi.org/10.1016/j.crma.2007.09.019.</li><li>Quarteroni, Alfio, Andrea Manzoni, and Federico Negri. Reduced Basis Methods for Partial Differential Equations. Vol. 92. UNITEXT. Cham: Springer International Publishing, 2016. http://link.springer.com/10.1007/978-3-319-15431-2.</li></ol></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="test_prob.html">« Test Problem</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="auto">Automatic (OS)</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.2.1 on <span class="colophon-date" title="Tuesday 20 February 2024 04:17">Tuesday 20 February 2024</span>. Using Julia version 1.10.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

@@ -7,6 +7,7 @@ u(1,p) = 1.0\\
 using Plots
 using Printf
 using Random
+using SparseArrays
 using Colors
 # Boundary conditions
 uleft = 0.0
@@ -14,28 +15,26 @@ uright = 1.0
 P = 2
 κ_i(i,x) = 1.1 .+ sin.(2π * i * x)
 κ(x,p) = sum([p[i] * κ_i(i,x) for i in 1:P])
-# Derivative of diffusion coefficient
-κp_i(i,x) = 2π * i * cos.(2π * i * x)
-κp(x,p) = sum([p[i] * κp_i(i,x) for i in 1:P])
 # Parameter dependent source term
 f_i(i,x) = i == 1 ? (x .&gt; 0.5) .* 10.0 : 20 .* sin.(2π * (i-1) * x)
 f(x,p) = f_i(1,x) .+ sum([p[i-1] * f_i(i,x) for i in 2:P+1])
 # Space setup
 h = 1e-3
 xs = Vector((0:h:1)[2:end-1])
+xhalfs = ((0:h:1)[1:end-1] .+ (0:h:1)[2:end]) ./ 2
 N = length(xs)
 # Helper to generate random parameter vector
 randP() = 0.1 .+ 2 .* rand(P)
 # Ai matrices
 function makeAi(i)
-    A = zeros(N,N)
+    A = spzeros(N,N)
     for j in 1:N
-        A[j,j]   = 2*κ_i(i,xs[j]) / h^2
+        A[j,j]   = (κ_i(i, xhalfs[j]) + κ_i(i, xhalfs[j+1])) / h^2
         if j&lt;N
-            A[j,j+1] = -κp_i(i,xs[j]) / (2h) - κ_i(i,xs[j]) / h^2
+            A[j,j+1] = -1 * κ_i(i, xhalfs[j+1]) / h^2
         end
         if j&gt;1
-            A[j,j-1] = κp_i(i,xs[j]) / (2h) - κ_i(i,xs[j]) / h^2
+            A[j,j-1] = -1 * κ_i(i, xhalfs[j]) / h^2
         end
     end
     return A
@@ -59,9 +58,9 @@ end
 function makebi(i)
     b = f_i(i,xs)
     if i &gt; 1
-        b[1] -= uleft * (κp_i(i,xs[1]) / (2h) - κ_i(i,xs[1]) / h^2)
-        b[end] -= uright * (-κp_i(i,xs[N]) / (2h) - κ_i(i,xs[N]) / h^2)
-    end
+            b[1] += uleft * κ_i(i, xhalfs[1]) / h^2
+            b[end] += uright * κ_i(i, xhalfs[end]) / h^2
+        end
     return b
 end
 bis = Vector{Float64}[]
@@ -106,8 +105,8 @@ for p1 in range(p_lb,p_ub,21)
 end
 # Initialize SCM Object
 Ma = 50; Mp = 15; ϵ_SCM = 1e-2;
-scm = initialize_SCM_SPD(params, Ais, makeθAi, Ma, Mp, ϵ_SCM)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(::ModelOrderReductionToolkit.SCM_Init) (generic function with 1 method)</code></pre><p>As can be seen in the below example, the method <code>find_sigma_bounds(scm,p)</code> returns both an upper-bound and a lower-bound estimate for the stability factor with a relative error on the order of <code>ϵ_SCM</code> as long as it is not too far from a parameter value in the discretization, <code>params</code>.</p><pre><code class="language-julia hljs">p = randP()
-find_sigma_bounds(scm, p)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(20.705558698286733, 20.729341343566183)</code></pre><p>Can also directly use <code>scm</code> as a function to approximate the lower bound</p><pre><code class="language-julia hljs">scm(p)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">20.705558698286733</code></pre><p>Note that in the case that <span>$A(p)$</span> is not SPD, one should instead use the noncoercive method.</p><pre><code class="language-julia hljs">scm = initialize_SCM_Noncoercive(params, Ais, makeθAi, Ma, Mp, ϵ_SCM)</code></pre><p>With the SCM object initialized, one can call the <code>GreedyRBAffineLinear</code> method to greedily generate a reduced basis, <span>$\{v_i\}_{i=1}^r$</span>, one element at a time, to an <span>$l^2$</span> error on the order of <span>$\epsilon_{greedy}$</span>, see reference 2,</p><pre><code class="language-julia hljs">ϵ_greedy = 1e-1
+scm = initialize_SCM_SPD(params, Ais, makeθAi, Ma, Mp, ϵ_SCM)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(::ModelOrderReductionToolkit.SCM_Init) (generic function with 1 method)</code></pre><p>As can be seen in the below example, the method <code>find_sigma_bounds(scm,p)</code> returns both an upper-bound and a lower-bound estimate for the stability factor with a relative error on the order of <code>ϵ_SCM</code> as long as it is not too far from a parameter value in the discretization, <code>params</code>.</p><pre><code class="language-julia hljs">randp = randP()
+find_sigma_bounds(scm, randp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(20.70571533129155, 20.72949201318246)</code></pre><p>Can also directly use <code>scm</code> as a function to approximate the lower bound</p><pre><code class="language-julia hljs">scm(randp)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">20.70571533129155</code></pre><p>Note that in the case that <span>$A(p)$</span> is not SPD, one should instead use the noncoercive method.</p><pre><code class="language-julia hljs">scm = initialize_SCM_Noncoercive(params, Ais, makeθAi, Ma, Mp, ϵ_SCM)</code></pre><p>With the SCM object initialized, one can call the <code>GreedyRBAffineLinear</code> method to greedily generate a reduced basis, <span>$\{v_i\}_{i=1}^r$</span>, one element at a time, to an <span>$l^2$</span> error on the order of <span>$\epsilon_{greedy}$</span>, see reference 2,</p><pre><code class="language-julia hljs">ϵ_greedy = 1e-1
 greedy_sol = GreedyRBAffineLinear(params, Ais, makeθAi, bis, makeθbi, scm, ϵ_greedy)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Initialized reduced basis method for parametrized problem A(p) x = b(p) with affine parameter dependence:
     A(p) = ∑ makeθAi(p,i) Ais[i],
     b(p) = ∑ makeθbi(p,i) bis[i].
@@ -123,5 +122,4 @@ for i in 1:10
     plot!(xs, u, c=colors[i],label=(i==1 ? &quot;truth&quot; : false))
     plot!(xs, u_approx, c=colors[i], ls=:dash,label=(i==1 ? &quot;greedy&quot; : false))
 end
-title!(&quot;Example solutions and greedy solutions&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">┌ Warning: Assignment to `p` in soft scope is ambiguous because a global variable by the same name exists: `p` will be treated as a new local. Disambiguate by using `local p` to suppress this warning or `global p` to assign to the existing global variable.
-└ @ test_prob.md:177</code></pre><p><img src="ex2.svg" alt/></p><p>Note that the method <code>GreedyRBAffineLinear</code> takes advantage of the affine parameter dependence of both the left and right hand sides for quick evaluation (approximation) of the norm of the residual, and the stability factor, which does not depend on the dimension of the original problem <span>$n$</span>. Only after it has looped through all of the parameters in the discretization, it chooses the one that displays the worst upper-bound error, computes the full-order solution for that parameter, and adds that solution as the next reduced basis element, <span>$v_i$</span>.</p><h3 id="References:"><a class="docs-heading-anchor" href="#References:">References:</a><a id="References:-1"></a><a class="docs-heading-anchor-permalink" href="#References:" title="Permalink"></a></h3><ol><li>D.B.P. Huynh, G. Rozza, S. Sen, A.T. Patera. A successive constraint linear optimization method for lower bounds of parametric coercivity and inf–sup stability constants. Comptes Rendus Mathematique. Volume 345, Issue 8. 2007. Pages 473-478. https://doi.org/10.1016/j.crma.2007.09.019.</li><li>Quarteroni, Alfio, Andrea Manzoni, and Federico Negri. Reduced Basis Methods for Partial Differential Equations. Vol. 92. UNITEXT. Cham: Springer International Publishing, 2016. http://link.springer.com/10.1007/978-3-319-15431-2.</li></ol></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="index.html">« Docstrings</a><a class="docs-footer-nextpage" href="rbm_tutorial.html">RBM Tutorial »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="auto">Automatic (OS)</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.2.1 on <span class="colophon-date" title="Sunday 11 February 2024 19:47">Sunday 11 February 2024</span>. Using Julia version 1.10.0.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+title!(&quot;Example solutions and greedy solutions&quot;)</code></pre><p><img src="ex2.svg" alt/></p><p>Note that the method <code>GreedyRBAffineLinear</code> takes advantage of the affine parameter dependence of both the left and right hand sides for quick evaluation (approximation) of the norm of the residual, and the stability factor, which does not depend on the dimension of the original problem <span>$n$</span>. Only after it has looped through all of the parameters in the discretization, it chooses the one that displays the worst upper-bound error, computes the full-order solution for that parameter, and adds that solution as the next reduced basis element, <span>$v_i$</span>.</p><h3 id="References:"><a class="docs-heading-anchor" href="#References:">References:</a><a id="References:-1"></a><a class="docs-heading-anchor-permalink" href="#References:" title="Permalink"></a></h3><ol><li>D.B.P. Huynh, G. Rozza, S. Sen, A.T. Patera. A successive constraint linear optimization method for lower bounds of parametric coercivity and inf–sup stability constants. Comptes Rendus Mathematique. Volume 345, Issue 8. 2007. Pages 473-478. https://doi.org/10.1016/j.crma.2007.09.019.</li><li>Quarteroni, Alfio, Andrea Manzoni, and Federico Negri. Reduced Basis Methods for Partial Differential Equations. Vol. 92. UNITEXT. Cham: Springer International Publishing, 2016. http://link.springer.com/10.1007/978-3-319-15431-2.</li></ol></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="index.html">« Docstrings</a><a class="docs-footer-nextpage" href="rbm_tutorial.html">RBM Tutorial »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="auto">Automatic (OS)</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.2.1 on <span class="colophon-date" title="Tuesday 20 February 2024 04:17">Tuesday 20 February 2024</span>. Using Julia version 1.10.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
