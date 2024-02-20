@@ -57,6 +57,7 @@ using ModelOrderReductionToolkit
 using LinearAlgebra
 using Plots
 using Colors
+using SparseArrays
 using Random
 Random.seed!(1)
 gr()
@@ -66,28 +67,26 @@ uright = 1.0
 p_len = 2
 κ_i(i,x) = 1.1 .+ sin.(2π * i * x)
 κ(x,p) = sum([p[i] * κ_i(i,x) for i in 1:p_len])
-# Derivative of diffusion coefficient
-κp_i(i,x) = 2π * i * cos.(2π * i * x)
-κp(x,p) = sum([p[i] * κp_i(i,x) for i in 1:p_len])
 # Parameter dependent source term
 f_i(i,x) = i == 1 ? (x .> 0.5) .* 10.0 : 20 .* sin.(2π * (i-1) * x)
 f(x,p) = f_i(1,x) .+ sum([p[i-1] * f_i(i,x) for i in 2:p_len+1])
 # Space setup
 h = 1e-3
 xs = Vector((0:h:1)[2:end-1])
+xhalfs = ((0:h:1)[1:end-1] .+ (0:h:1)[2:end]) ./ 2
 N = length(xs)
 # Helper to generate random parameter vector
 randP() = 0.1 .+ 2 .* rand(p_len)
 # Ai matrices
 function makeAi(i)
-    A = zeros(N,N)
+    A = spzeros(N,N)
     for j in 1:N
-        A[j,j]   = 2*κ_i(i,xs[j]) / h^2
+        A[j,j]   = (κ_i(i, xhalfs[j]) + κ_i(i, xhalfs[j+1])) / h^2
         if j<N
-            A[j,j+1] = -κp_i(i,xs[j]) / (2h) - κ_i(i,xs[j]) / h^2
+            A[j,j+1] = -1 * κ_i(i, xhalfs[j+1]) / h^2
         end
         if j>1
-            A[j,j-1] = κp_i(i,xs[j]) / (2h) - κ_i(i,xs[j]) / h^2
+            A[j,j-1] = -1 * κ_i(i, xhalfs[j]) / h^2
         end
     end
     return A
@@ -101,7 +100,7 @@ function makeθAi(p,i)
     return p[i]
 end
 function makeA(p)
-    A = zeros(size(Ais[1]))
+    A = spzeros(size(Ais[1]))
     for i in eachindex(Ais)
         A .+= makeθAi(p,i) .* Ais[i]
     end
@@ -111,9 +110,9 @@ end
 function makebi(i)
     b = f_i(i,xs)
     if i > 1
-        b[1] -= uleft * (κp_i(i,xs[1]) / (2h) - κ_i(i,xs[1]) / h^2)
-        b[end] -= uright * (-κp_i(i,xs[N]) / (2h) - κ_i(i,xs[N]) / h^2)
-    end
+            b[1] += uleft * κ_i(i, xhalfs[1]) / h^2
+            b[end] += uright * κ_i(i, xhalfs[end]) / h^2
+        end
     return b
 end
 bis = Vector{Float64}[]
@@ -377,6 +376,7 @@ using ModelOrderReductionToolkit
 using LinearAlgebra
 using Plots
 using Colors
+using SparseArrays
 using Random
 Random.seed!(1)
 gr()
@@ -385,29 +385,27 @@ uleft = 0.0
 uright = 1.0
 p_len = 2
 κ_i(i,x) = 1.1 .+ sin.(2π * i * x)
-κ(x,p) = sum([p[i] * κ_i(i,x) for i in 1:p_len])
-# Derivative of diffusion coefficient
-κp_i(i,x) = 2π * i * cos.(2π * i * x)
-κp(x,p) = sum([p[i] * κp_i(i,x) for i in 1:p_len])
+κ(x,p) = sum([p[i] * κ_i(i,x) for i in 1:p_len]) 
 # Parameter dependent source term
 f_i(i,x) = i == 1 ? (x .> 0.5) .* 10.0 : 20 .* sin.(2π * (i-1) * x)
 f(x,p) = f_i(1,x) .+ sum([p[i-1] * f_i(i,x) for i in 2:p_len+1])
 # Space setup
 h = 1e-3
 xs = Vector((0:h:1)[2:end-1])
+xhalfs = ((0:h:1)[1:end-1] .+ (0:h:1)[2:end]) ./ 2
 N = length(xs)
 # Helper to generate random parameter vector
 randP() = 0.1 .+ 2 .* rand(p_len)
 # Ai matrices
 function makeAi(i)
-    A = zeros(N,N)
+    A = spzeros(N,N)
     for j in 1:N
-        A[j,j]   = 2*κ_i(i,xs[j]) / h^2
+        A[j,j]   = (κ_i(i, xhalfs[j]) + κ_i(i, xhalfs[j+1])) / h^2
         if j<N
-            A[j,j+1] = -κp_i(i,xs[j]) / (2h) - κ_i(i,xs[j]) / h^2
+            A[j,j+1] = -1 * κ_i(i, xhalfs[j+1]) / h^2
         end
         if j>1
-            A[j,j-1] = κp_i(i,xs[j]) / (2h) - κ_i(i,xs[j]) / h^2
+            A[j,j-1] = -1 * κ_i(i, xhalfs[j]) / h^2
         end
     end
     return A
@@ -431,9 +429,9 @@ end
 function makebi(i)
     b = f_i(i,xs)
     if i > 1
-        b[1] -= uleft * (κp_i(i,xs[1]) / (2h) - κ_i(i,xs[1]) / h^2)
-        b[end] -= uright * (-κp_i(i,xs[N]) / (2h) - κ_i(i,xs[N]) / h^2)
-    end
+            b[1] += uleft * κ_i(i, xhalfs[1]) / h^2
+            b[end] += uright * κ_i(i, xhalfs[end]) / h^2
+        end
     return b
 end
 bis = Vector{Float64}[]

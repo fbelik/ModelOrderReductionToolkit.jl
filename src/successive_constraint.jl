@@ -3,8 +3,10 @@ using JuMP
 using Tulip
 using NearestNeighbors
 using StaticArrays
+using SparseArrays
 using Printf
 
+const MAX_ITER = 10000
 const LP_MAX_VAL = 1e6
 
 """
@@ -127,7 +129,7 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
     for i in 1:QA
         A = collect(Ais[i])
         A .= 0.5 .* (A .+ A')
-        eigenvalues = eigen(A).values
+        eigenvalues = eigen!(A).values
         push!(B, (minimum(real.(eigenvalues)), maximum(real.(eigenvalues))))
     end
     # Linear program resizing constant
@@ -155,15 +157,16 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
     p1 = tree.data[1]
     C = [p1]
     C_indices = [1]
+    A_UB = zeros(eltype(Ais[1]),size(Ais[1]))
     make_UB(p) = begin
-        A = zeros(eltype(Ais[1]),size(Ais[1]))
+        A_UB .= 0
         for i in eachindex(Ais)
-            A .+= makeθAi(p,i) .* Ais[i]
+            A_UB .+= makeθAi(p,i) .* Ais[i]
         end
-        eg = eigen(A)
+        eg = eigen!(A_UB, sortby=real)
         vec = eg.vectors[:,1]
         y = JH(vec)
-        σ = minimum(real.(eg.values))
+        σ = real(eg.values[1])
         return (σ, y)
     end
     σ, y = make_UB(p1)
@@ -242,8 +245,9 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
     for i in 1:QAA
         AA = collect(AiAjs[i])
         AA .= 0.5 .* (AA .+ AA')
-        eigenvalues = real.(eigen(AA).values)
-        push!(B, (minimum(eigenvalues), maximum(eigenvalues)))
+        mineig = eigmin(AA)
+        maxeig = eigmax(AA)
+        push!(B, (mineig, maxeig))
     end
     # Linear program resizing constant
     R = 0.0
@@ -277,20 +281,23 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
     p1 = tree.data[1]
     C = [p1]
     C_indices = [1]
+    A_UB = zeros(eltype(Ais[1]),size(Ais[1]))
     make_UB(p) = begin
-        A = zeros(eltype(Ais[1]),size(Ais[1]))
+        A_UB .= 0
         for i in eachindex(Ais)
-            A .+= makeθAi(p,i) .* Ais[i]
+            A_UB .+= makeθAi(p,i) .* Ais[i]
         end
-        svdA = svd(A)
-        σ = svdA.S[end]
-        vec = svdA.V[:,end]
+        # Compute minimum eigenvalue of A'A
+        A_UB .= A_UB' * A_UB
+        eg = eigen!(A_UB, sortby=real)
+        vec = eg.vectors[:,1]
         y = JH(vec)
-        return (σ ^ 2, y)
+        σ² = real(eg.values[1])
+        return (σ², y)
     end
-    σ, y = make_UB(p1)
+    σ², y = make_UB(p1)
     Y_UB = [y]
-    σ_UBs = [σ]
+    σ_UBs = [σ²]
     scm =  SCM_Init(d, QAA, tree, tree_lookup, B, C, 
                     C_indices, Mα, Mp, ϵ, J, make_UB, 
                     Y_UB, σ_UBs, false, R, optimizer)
