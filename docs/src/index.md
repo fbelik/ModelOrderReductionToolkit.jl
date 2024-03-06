@@ -26,6 +26,9 @@ initialize_SCM_Noncoercive
 find_sigma_bounds
 ModelOrderReductionToolkit.form_upperbound_set!
 ModelOrderReductionToolkit.solve_LBs_LP
+ModelOrderReductionToolkit.smallest_real_eigval
+ModelOrderReductionToolkit.largest_real_eigval
+ModelOrderReductionToolkit.smallest_real_pos_eigpair
 ```
 
 ### Radial-basis interpolatory stability factor

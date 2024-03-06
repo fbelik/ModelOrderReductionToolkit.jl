@@ -1,5 +1,6 @@
 using LinearAlgebra
 using Printf
+using SparseArrays
 include("successive_constraint.jl")
 include("residual_norm.jl")
 
@@ -166,13 +167,14 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
                               T::Type=Float64,
                               max_snapshots=-1,
                               noise=1)
+    sparse = all(issparse.(Ais))
     if param_disc isa AbstractMatrix
         params = eachcol(param_disc)
     else
         params = param_disc
     end
     # Choose a parameter vector p to begin with
-    Atruth = zeros(T,size(Ais[1]))
+    Atruth = sparse ? spzeros(T,size(Ais[1])) : zeros(T,size(Ais[1]))
     btruth = zeros(T,length(bis[1]))
     truth_sol(p) = begin
         Atruth .= 0.0
@@ -187,7 +189,7 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
     end
     # Begin iteration by parameter with minimum stability factor
     if noise >= 1
-        @printf("Beginning greedy selection, looping until truth error less than ϵ=%.2e",ϵ)
+        @printf("Beginning greedy selection, looping until upperbound error less than ϵ=%.2e",ϵ)
         if max_snapshots >= 1
             @printf("\nor until %d snapshots formed", max_snapshots)
         end
@@ -233,7 +235,7 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
     k = 1
     while k < max_snapshots
         k += 1
-        maxerr = 0
+        maxerr = -1.0
         maxp = nothing
         for p in params
             if p in ps
@@ -248,6 +250,13 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
                 maxerr = err
             end
         end
+        # Break condition
+        if maxerr < ϵ
+            if noise >= 1
+                @printf("k=%d, upperbound error = %.4e, terminating\n",k,maxerr)
+            end
+            break
+        end
         # Compute full solution to add to V
         u = truth_sol(maxp)
         u_r = approx_sol(maxp,VtAVis,Vtbis,VtAV,Vtb)
@@ -256,13 +265,6 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
             u_approx .+= u_r[i] .* V[i]
         end
         trueerr = norm(u .- u_approx)
-        # Break condition
-        if trueerr < ϵ
-            if noise >= 1
-                @printf("k=%d, truth error = %.4e, upperbound error = %.4e\n",k,trueerr,maxerr)
-            end
-            break
-        end
         # Make orthogonal to v1,...,vn - Modified Gram-Schmidt
         for i in eachindex(V)
             u .= u .- (V[i]' * u) .* V[i]
@@ -422,8 +424,8 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
     while k < num_snapshots
         k += 1
         # Weak greedy algorithm
-        maxerr_ub = 0
-        maxerr_truth = 0
+        maxerr_ub = -1.0
+        maxerr_truth = -1.0
         maxp = nothing
         maxerr_truth_ub = 0
         for (i,p) in enumerate(params)

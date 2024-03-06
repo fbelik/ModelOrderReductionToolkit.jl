@@ -1,5 +1,6 @@
 using LinearAlgebra
 using JuMP
+using Arpack
 using Tulip
 using NearestNeighbors
 using StaticArrays
@@ -35,6 +36,7 @@ struct SCM_Init <: Function
     make_UB::Function
     Y_UB::AbstractVector{<:AbstractVector{<:Number}}
     σ_UBs::AbstractVector{Float64}
+    σ_LBs::AbstractVector{Float64}
     spd::Bool
     R::Float64
     optimizer::Any
@@ -54,13 +56,13 @@ function Base.show(io::Core.IO, scm::SCM_Init)
 end
 
 """
-`(scm_init::SCM_Init)(p::AbstractVector{<:Real}; noise=0)`
+`(scm_init::SCM_Init)(p::AbstractVector; noise=0)`
 
 Method that performs the online phase of SCM for the matrix
 `A(p) = ∑ makeθAi(p,i) Ais[i]` to compute a lower-bound
 approximation to the minimum singular value of `A`.
 """
-function (scm_init::SCM_Init)(p::AbstractVector{<:Real}; noise=0)
+function (scm_init::SCM_Init)(p::AbstractVector; noise=0)
     # Find lower bound through linear program
     σ_LB, _ = solve_LBs_LP(scm_init, p, noise=noise)
     # In case of round error
@@ -69,6 +71,108 @@ function (scm_init::SCM_Init)(p::AbstractVector{<:Real}; noise=0)
         σ_LB = sqrt(σ_LB)
     end
     return σ_LB
+end
+
+"""
+`smallest_real_eigval(A, kmaxiter[, noise=1, krylovsteps=10])`
+
+Given a hermitian matrix `A`, attempts to compute the 
+most negative (real) eigenvalue. First, uses Krylov iteration
+with a shift-invert procedure with Gershgorin disks, and if 
+not successful, calls a full, dense, eigensolve.
+"""
+function smallest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, krylovsteps=10)
+    # Try invert method per Gershgorin disks
+    mingd = 0.0
+    mingd_center = 0.0
+    for i in 1:size(A)[1]
+        newmingd = real(A[i,i]) - (sum(abs.(view(A,i,:))) - abs(A[i,i]))
+        if newmingd < mingd
+            mingd = newmingd
+            mingd_center = real(A[i,i])
+        end
+    end
+
+    log_tilde(x) = x >= 1 ? log(x) : (x <= -1 ? -log(-x) : 0)
+    exp_tilde(x) = x > 0 ? exp(x) : -exp(-x)
+    exprange = exp_tilde.(range(log_tilde(mingd), log_tilde(mingd_center), krylovsteps))
+    for sigma in exprange 
+        try
+            res = eigs(A, which=:LM, sigma=sigma, nev=1, ritzvec=false, maxiter=kmaxiter)
+            return real(res[1][1])
+        catch e
+            if !isa(e,Arpack.XYAUPD_Exception)
+                error(e)
+            end
+        end
+        if noise >= 1
+            @printf("Krylov iteration did not converge with shift-invert σ=%.2e, reducing\n",mingd)
+        end
+        # if mingd >= -100
+        #     break
+        # end
+        # mingd = -1 * (sqrt(-1 * mingd))
+    end
+    if noise >= 1
+        println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
+        println("Otherwise, Gershgorin lower-bound on ")
+    end
+    # Perform brute eigen
+    res = eigen!(issparse(A) ? collect(A) : A)
+    return minimum(real.(res.values))
+end
+
+"""
+`largest_real_eigval(A, kmaxiter[, noise=1])`
+
+Given a hermitian matrix `A`, attempts to compute the 
+most positive (real) eigenvalue. First, uses Krylov iteration
+with no shift-invert, and if not successful, calls a full, 
+dense, eigensolve.
+"""
+function largest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1)
+    # Do not invert
+    try
+        res = eigs(A, which=:LR, nev=1, ritzvec=false, maxiter=kmaxiter)
+        return real(res[1][1])
+    catch e
+        if !isa(e,Arpack.XYAUPD_Exception)
+            error(e)
+        end
+        if noise >= 1
+            println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
+        end
+        # Perform brute eigen
+        res = eigen!(issparse(A) ? collect(A) : A)
+        return maximum(real.(res.values))
+    end
+end
+
+"""
+`smallest_real_pos_eigpair(A, kmaxiter[, noise=1])`
+
+Given a hermitian, positive definite matrix `A`, attempts to compute the 
+smallest (real) eigenvalue and eigenvector. First, uses Krylov iteration
+with shift-invert around zero, and if not successful, calls a full, 
+dense, eigensolve. Returns a tuple with the first component being the 
+eigenvalue, and the second component being the eigenvector.
+"""
+function smallest_real_pos_eigpair(A::AbstractMatrix, kmaxiter, noise=1)
+    # Try invert around 0
+    try
+        res = eigs(A, which=:LM, sigma=0, nev=1, ritzvec=true, maxiter=kmaxiter)
+        return (real(res[1][1]), view(res[2],:,1))
+    catch e
+        if !isa(e,Arpack.XYAUPD_Exception)
+            error(e)
+        end
+        if noise >= 1
+            println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
+        end
+        # Perform brute eigen
+        res = eigen!(issparse(A) ? collect(A) : A, sortby=real)
+        return (minimum(real.(res.values)), res.vectors[:,1])
+    end
 end
 
 """
@@ -109,7 +213,9 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
                             Mα::Int,
                             Mp::Int,
                             ϵ::AbstractFloat;
+                            T::Type=Float64,
                             optimizer=Tulip.Optimizer,
+                            kmaxiter=1000,
                             noise::Int=1)
     # Form data tree to search for nearest neighbors
     if typeof(param_disc) <: Vector
@@ -126,12 +232,18 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
     QA = length(Ais)
     # Real numerical range of A equals real numerical range of (1/2)(A+A^T)
     B = Tuple{Float64,Float64}[]
+    Ais_herm = []
     for i in 1:QA
-        A = collect(Ais[i])
-        A .= 0.5 .* (A .+ A')
-        eigenvalues = eigen!(A).values
-        push!(B, (minimum(real.(eigenvalues)), maximum(real.(eigenvalues))))
+        A = 0.5 .* (Ais[i] .+ Ais[i]')
+        push!(Ais_herm, A)
+        mineig = smallest_real_eigval(A, kmaxiter, noise)
+        maxeig = largest_real_eigval(A, kmaxiter, noise)
+        push!(B, (mineig, maxeig))
     end
+    makeθAi_herm(p,i) = begin
+        θAi = makeθAi(p,i)
+        return 0.5 * (θAi + θAi')
+    end 
     # Linear program resizing constant
     R = 0.0
     for i in 1:QA
@@ -142,39 +254,38 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
     J(p,y) = begin
         res = 0.0
         for i in 1:QA
-            res += makeθAi(p,i) * y[i]
+            res += makeθAi_herm(p,i) * y[i]
         end
         real(res)
     end
+    y_JH = Vector{Float64}(undef,QA)
     JH(x) = begin
-        y = Vector{eltype(x)}(undef,QA)
         for i in 1:QA
-            y[i] = (x' * Ais[i] * x) / (x' * x)
+            y_JH[i] = real((x' * Ais_herm[i] * x) / (x' * x))
         end
-        return SVector{QA}(y)
+        return SVector{QA}(y_JH)
     end
     # Initialize upperbound sets
     p1 = tree.data[1]
     C = [p1]
     C_indices = [1]
-    A_UB = zeros(eltype(Ais[1]),size(Ais[1]))
+    A_UB = zeros(T,size(Ais[1]))
     make_UB(p) = begin
         A_UB .= 0
         for i in eachindex(Ais)
             A_UB .+= makeθAi(p,i) .* Ais[i]
         end
-        eg = eigen!(A_UB, sortby=real)
-        vec = eg.vectors[:,1]
+        σ, vec = smallest_real_pos_eigpair(A_UB, kmaxiter, noise)
         y = JH(vec)
-        σ = real(eg.values[1])
         return (σ, y)
     end
     σ, y = make_UB(p1)
     Y_UB = [y]
     σ_UBs = [σ]
+    σ_LBs = zeros(length(tree.data))
     scm =  SCM_Init(d, QA, tree, tree_lookup, B, C, 
                     C_indices, Mα, Mp, ϵ, J, make_UB, 
-                    Y_UB, σ_UBs, true, R, optimizer)
+                    Y_UB, σ_UBs, σ_LBs, true, R, optimizer)
     # Form upperbound set to ϵ accuracy
     form_upperbound_set!(scm, noise=noise)
     return scm
@@ -218,7 +329,9 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
                         Mα::Int,
                         Mp::Int,
                         ϵ::AbstractFloat;
+                        T::Type=Float64,
                         optimizer=Tulip.Optimizer,
+                        kmaxiter=1000,
                         noise::Int=1)
     # Form data tree to search for nearest neighbors
     if typeof(param_disc) <: Vector
@@ -233,20 +346,21 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
     d = length(tree.data[1])
     # Form boundary set by solving eigenvalue problems on each A_i^T A_j
     QA = length(Ais)
-    AiAjs = Matrix{eltype(Ais[1])}[]
+    AiAjs_herm = []
     for i in 1:QA
         for j in i:QA
-            push!(AiAjs, Ais[i]' * Ais[j])
+            AiAj = Ais[i]' * Ais[j]
+            AiAj .= 0.5 .* (AiAj .+ AiAj')
+            push!(AiAjs_herm, AiAj)
         end
     end
-    QAA = length(AiAjs)
+    QAA = length(AiAjs_herm)
     B = Tuple{Float64,Float64}[]
     # Real numerical range of A equals real numerical range of (1/2)(A+A^T)
     for i in 1:QAA
-        AA = collect(AiAjs[i])
-        AA .= 0.5 .* (AA .+ AA')
-        mineig = eigmin(AA)
-        maxeig = eigmax(AA)
+        AA = AiAjs_herm[i]
+        mineig = smallest_real_eigval(AA, kmaxiter, noise)
+        maxeig = largest_real_eigval(AA, kmaxiter, noise)
         push!(B, (mineig, maxeig))
     end
     # Linear program resizing constant
@@ -261,27 +375,28 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
         idx = 1
         for i in 1:QA
             θAi = makeθAi(p,i)
-            res += θAi^2 * y[idx]
+            res += 0.5 * real(θAi'θAi + (θAi'θAi)') * y[idx]
             idx += 1
             for j in (i+1):QA
-                res += 2 * θAi * makeθAi(p,j) * y[idx]
+                θAj = makeθAi(p,j)
+                res += real(θAi'θAj + (θAi'θAj)') * y[idx]
                 idx += 1
             end
         end
-        return real(res)
+        return res
     end
+    y_JH = Vector{Float64}(undef,QAA)
     JH(x) = begin
-        y = Vector{eltype(x)}(undef,QAA)
         for idx in 1:QAA
-            y[idx] = (x' * AiAjs[idx] * x) / (x' * x)
+            y_JH[idx] = real((x' * AiAjs_herm[idx] * x) / (x' * x))
         end
-        return SVector{QAA}(y)
+        return SVector{QAA}(y_JH)
     end
     # Initialize upperbound sets
     p1 = tree.data[1]
     C = [p1]
     C_indices = [1]
-    A_UB = zeros(eltype(Ais[1]),size(Ais[1]))
+    A_UB = zeros(T,size(Ais[1]))
     make_UB(p) = begin
         A_UB .= 0
         for i in eachindex(Ais)
@@ -289,18 +404,17 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
         end
         # Compute minimum eigenvalue of A'A
         A_UB .= A_UB' * A_UB
-        eg = eigen!(A_UB, sortby=real)
-        vec = eg.vectors[:,1]
+        σ², vec = smallest_real_pos_eigpair(A_UB, kmaxiter, noise)
         y = JH(vec)
-        σ² = real(eg.values[1])
         return (σ², y)
     end
     σ², y = make_UB(p1)
     Y_UB = [y]
     σ_UBs = [σ²]
+    σ_LBs = zeros(length(tree.data))
     scm =  SCM_Init(d, QAA, tree, tree_lookup, B, C, 
                     C_indices, Mα, Mp, ϵ, J, make_UB, 
-                    Y_UB, σ_UBs, false, R, optimizer)
+                    Y_UB, σ_UBs, σ_LBs, false, R, optimizer)
     # Form upperbound set to ϵ accuracy
     form_upperbound_set!(scm, noise=noise)
     return scm
@@ -313,7 +427,7 @@ Helper method that takes in an `SCM_Init_SPD` object and a parameter vector
 `p`, and sets up and solves a linear program to compute a lower-bound
 `σ_LB` to the minimum singular value of `A(p)` along with the associated vector `y_LB`.
 """
-function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector{<:Real}; noise=1)
+function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector; noise=1)
     model = Model(scm_init.optimizer)
     try
         set_attribute(model, "IPM_IterationsLimit", 1000000)
@@ -336,12 +450,20 @@ function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector{<:Real}; noise=1)
         @constraint(model, scm_init.J(p_c,y) >= ub / scm_init.R)
     end
     # Positivity Constraints
-    p_idxs, _ = knn(scm_init.tree, p, scm_init.Mp, false, i -> (i in scm_init.C_indices[C_NN_idxs]))
-    for p_idx in p_idxs
-        p_nn = scm_init.tree.data[scm_init.tree_lookup[p_idx]]
+    p_idxs, _ = knn(scm_init.tree, p, scm_init.Mp, true, i -> (i in scm_init.C_indices[C_NN_idxs]))
+    tree_idx = scm_init.tree_lookup[p_idxs[1]]
+    closest_p = scm_init.tree.data[tree_idx]
+    if scm_init.Mp >= 1 && closest_p == p
+        @constraint(model, scm_init.J(p,y) >= scm_init.σ_LBs[tree_idx] / scm_init.R)
+    else
+        @constraint(model, scm_init.J(p,y) >= 0)
+        @constraint(model, scm_init.J(closest_p,y) >= 0)
+    end
+    for p_idx in p_idxs[2:end]
+        tree_idx = scm_init.tree_lookup[p_idx]
+        p_nn = scm_init.tree.data[tree_idx]
         @constraint(model, scm_init.J(p_nn,y) >= 0)
     end
-    @constraint(model, scm_init.J(p,y) >= 0)
     # Minimizer objective
     @objective(model, Min, scm_init.J(p,y))
     optimize!(model)
@@ -392,6 +514,9 @@ function form_upperbound_set!(scm_init::SCM_Init; noise::Int=1)
             end
             ## Solve linear program to find σ_LB, y_LB
             σ_LB, y_LB = solve_LBs_LP(scm_init, p_disc, noise=noise)
+            if σ_LB >= scm_init.σ_LBs[i]
+                scm_init.σ_LBs[i] = σ_LB
+            end
             ## Loop through Y_{UB} to find σ_UB
             σ_UB = Inf
             y_UB = zeros(eltype(scm_init.Y_UB[1]),scm_init.QA)
@@ -465,7 +590,7 @@ we know that not enough stability constraints were enforced, and
 the minimum singular value is directly computed, appended to the 
 scm_init's upper-bound set, and returned as both the lower and upper-bounds.
 """
-function find_sigma_bounds(scm_init::SCM_Init, p::AbstractVector{<:Real}, 
+function find_sigma_bounds(scm_init::SCM_Init, p::AbstractVector, 
                            sigma_eps::Float64=1.0; noise=0)
     # Loop through Y_{UB} to find upper-bound
     σ_UB = Inf
