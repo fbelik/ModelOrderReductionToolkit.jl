@@ -14,6 +14,7 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Tulip = "6dd1b50a-3aae-11e9-10b5-ef983d2400fa"
 
 [compat]
+Arpack = "=0.5.3, 0.5"
 JuMP = "1.0"
 LinearAlgebra = "1"
 NearestNeighbors = "0.4.0"
@@ -21,7 +22,6 @@ Printf = "1"
 SparseArrays = "1.9"
 StaticArrays = "1"
 Tulip = "0.9.0"
-Arpack = "=0.5.3"
 julia = "1.0"
 
 [extras]
