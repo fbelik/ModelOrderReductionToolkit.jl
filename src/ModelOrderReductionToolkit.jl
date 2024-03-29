@@ -1,6 +1,16 @@
 module ModelOrderReductionToolkit
 using LinearAlgebra
+using Printf
+using SparseArrays
+using Arpack
+using JuMP
+using Tulip
+using NearestNeighbors
+using StaticArrays
+include("la_utils.jl")
 include("projections.jl")
+include("successive_constraint.jl")
+include("residual_norm.jl")
 include("greedy_linear_rb.jl")
 include("stability_radial_basis.jl")
 # Linear Algebra exports

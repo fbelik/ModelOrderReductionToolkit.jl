@@ -34,6 +34,7 @@ ModelOrderReductionToolkit.smallest_real_pos_eigpair
 ### Radial-basis interpolatory stability factor
 ```@docs
 ModelOrderReductionToolkit.Sigma_Min_RBF
+ModelOrderReductionToolkit.smallest_sval
 min_sigma_rbf
 update_sigma_rbf!
 ```
