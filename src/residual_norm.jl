@@ -1,6 +1,3 @@
-using LinearAlgebra
-using StaticArrays
-
 """
 `Affine_Residual_Init`
 
@@ -187,11 +184,11 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init,
     res = 0.0
     idx = 1
     for i in 1:res_init.Qb
-        res += θbis[i] * θbis[i]' * res_init.cijs[idx]
+        res += real(θbis[i] * θbis[i]' * res_init.cijs[idx])
         idx += 1
         for j in i+1:res_init.Qb
-            cur = θbis[i] * θbis[j]' * res_init.cijs[idx]
-            res += cur + cur'
+            cur = θbis[i]' * θbis[j] * res_init.cijs[idx]
+            res += real(cur + cur')
             idx += 1
         end
     end
@@ -204,7 +201,7 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init,
             idx += 1
         end
     end
-    res += (cur + cur')
+    res += real(cur + cur')
     # Sum across Eijs
     idx = 1
     for i in 1:res_init.QA
@@ -212,19 +209,21 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init,
         for k in eachindex(u_r)
             cur += u_r[k] * (u_r' * res_init.Eijs[idx][k])
         end
-        res += θAis[i] * θAis[i]' * cur
+        res += real(θAis[i] * θAis[i]' * cur)
         idx += 1
         for j in i+1:res_init.QA
             cur = 0.0
             for k in eachindex(u_r)
                 cur += u_r[k] * (u_r' * res_init.Eijs[idx][k])
             end
-            res += θAis[i]' * θAis[j] * cur
-            res += θAis[i] * θAis[j]' * cur'
+            cur *= θAis[i]' * θAis[j] 
+            res += real(cur + cur')
+            # res += θAis[i]' * θAis[j] * cur
+            # res += θAis[i] * θAis[j]' * cur'
             idx += 1
         end
     end
-    return sqrt(max(0, real(res)))
+    return sqrt(max(0, res))
 end
 
 

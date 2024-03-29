@@ -1,12 +1,3 @@
-using LinearAlgebra
-using JuMP
-using Arpack
-using Tulip
-using NearestNeighbors
-using StaticArrays
-using SparseArrays
-using Printf
-
 const MAX_ITER = 10000
 const LP_MAX_VAL = 1e6
 
@@ -71,108 +62,6 @@ function (scm_init::SCM_Init)(p::AbstractVector; noise=0)
         σ_LB = sqrt(σ_LB)
     end
     return σ_LB
-end
-
-"""
-`smallest_real_eigval(A, kmaxiter[, noise=1, krylovsteps=10])`
-
-Given a hermitian matrix `A`, attempts to compute the 
-most negative (real) eigenvalue. First, uses Krylov iteration
-with a shift-invert procedure with Gershgorin disks, and if 
-not successful, calls a full, dense, eigensolve.
-"""
-function smallest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, krylovsteps=10)
-    # Try invert method per Gershgorin disks
-    mingd = 0.0
-    mingd_center = 0.0
-    for i in 1:size(A)[1]
-        newmingd = real(A[i,i]) - (sum(abs.(view(A,i,:))) - abs(A[i,i]))
-        if newmingd < mingd
-            mingd = newmingd
-            mingd_center = real(A[i,i])
-        end
-    end
-
-    log_tilde(x) = x >= 1 ? log(x) : (x <= -1 ? -log(-x) : 0)
-    exp_tilde(x) = x > 0 ? exp(x) : -exp(-x)
-    exprange = exp_tilde.(range(log_tilde(mingd), log_tilde(mingd_center), krylovsteps))
-    for sigma in exprange 
-        try
-            res = eigs(A, which=:LM, sigma=sigma, nev=1, ritzvec=false, maxiter=kmaxiter)
-            return real(res[1][1])
-        catch e
-            if !isa(e,Arpack.XYAUPD_Exception)
-                error(e)
-            end
-        end
-        if noise >= 1
-            @printf("Krylov iteration did not converge with shift-invert σ=%.2e, reducing\n",mingd)
-        end
-        # if mingd >= -100
-        #     break
-        # end
-        # mingd = -1 * (sqrt(-1 * mingd))
-    end
-    if noise >= 1
-        println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
-        println("Otherwise, Gershgorin lower-bound on ")
-    end
-    # Perform brute eigen
-    res = eigen!(issparse(A) ? collect(A) : A)
-    return minimum(real.(res.values))
-end
-
-"""
-`largest_real_eigval(A, kmaxiter[, noise=1])`
-
-Given a hermitian matrix `A`, attempts to compute the 
-most positive (real) eigenvalue. First, uses Krylov iteration
-with no shift-invert, and if not successful, calls a full, 
-dense, eigensolve.
-"""
-function largest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1)
-    # Do not invert
-    try
-        res = eigs(A, which=:LR, nev=1, ritzvec=false, maxiter=kmaxiter)
-        return real(res[1][1])
-    catch e
-        if !isa(e,Arpack.XYAUPD_Exception)
-            error(e)
-        end
-        if noise >= 1
-            println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
-        end
-        # Perform brute eigen
-        res = eigen!(issparse(A) ? collect(A) : A)
-        return maximum(real.(res.values))
-    end
-end
-
-"""
-`smallest_real_pos_eigpair(A, kmaxiter[, noise=1])`
-
-Given a hermitian, positive definite matrix `A`, attempts to compute the 
-smallest (real) eigenvalue and eigenvector. First, uses Krylov iteration
-with shift-invert around zero, and if not successful, calls a full, 
-dense, eigensolve. Returns a tuple with the first component being the 
-eigenvalue, and the second component being the eigenvector.
-"""
-function smallest_real_pos_eigpair(A::AbstractMatrix, kmaxiter, noise=1)
-    # Try invert around 0
-    try
-        res = eigs(A, which=:LM, sigma=0, nev=1, ritzvec=true, maxiter=kmaxiter)
-        return (real(res[1][1]), view(res[2],:,1))
-    catch e
-        if !isa(e,Arpack.XYAUPD_Exception)
-            error(e)
-        end
-        if noise >= 1
-            println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
-        end
-        # Perform brute eigen
-        res = eigen!(issparse(A) ? collect(A) : A, sortby=real)
-        return (minimum(real.(res.values)), res.vectors[:,1])
-    end
 end
 
 """
@@ -474,7 +363,7 @@ function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector; noise=1)
         σ_LB = 0.0
         y_LB = zeros(scm_init.QA)
     elseif objective_value(model) < 0.0
-        if noise >= 1
+        if noise >= 2
             println("Warning: Lower bound found to be negative")
         end
         σ_LB = 0.0

@@ -1,9 +1,3 @@
-using LinearAlgebra
-using Printf
-using SparseArrays
-include("successive_constraint.jl")
-include("residual_norm.jl")
-
 """
 `Greedy_RB_Affine_Linear`
 
@@ -265,7 +259,10 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
             u_approx .+= u_r[i] .* V[i]
         end
         trueerr = norm(u .- u_approx)
-        # Make orthogonal to v1,...,vn - Modified Gram-Schmidt
+        # Make orthogonal to v1,...,vn - Modified Gram-Schmidt2
+        for i in eachindex(V)
+            u .= u .- (V[i]' * u) .* V[i]
+        end
         for i in eachindex(V)
             u .= u .- (V[i]' * u) .* V[i]
         end
@@ -300,6 +297,8 @@ See the docs for `GreedyRBAffineLinear` for more information.
 
 Returns a dictionary, `ret_data`, with the following components:
 
+`ret_data[:truth_sols]` = Vector containing all truth solutions.
+
 `ret_data[:basis_dim]` - A vector of reduced basis dimensions from 2 to `num_snapshots`
 
 `ret_data[:weak_greedy_ub]` - A vector of the maximum upperbound l2 error found by the 
@@ -317,11 +316,17 @@ strong greedy reduced basis method, uses knowledge of all solutions
 `ret_data[:strong_greedy_proj]` - A vector of the maximum l2 error found by projecting  
 truth solutions onto the strong greedy reduced basis, uses knowledge of all solutions
 
+`ret_data[:qr_projector]` - A projection object which can be used to orthogonally project
+vectors onto the strong greedy subspace. See ModelOrderReductionToolkit.qr_projector method.
+
 `ret_data[:pca_err]` - A vector of the maximum l2 error found by a PCA/POD
 reduced basis method, uses knowledge of all solutions
 
 `ret_data[:strong_greedy_proj]` - A vector of the maximum l2 error found by projecting  
 truth solutions onto the PCA/POD reduced basis, uses knowledge of all solutions
+
+`ret_data[:pca_projector]` - A projection object which can be used to orthogonally project
+vectors onto the SVD/PCA subspace. See ModelOrderReductionToolkit.pca_projector method.
 """
 function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector},
                             Ais::AbstractVector,
@@ -339,7 +344,7 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
     end
 
     # Return data 
-    ret_data = Dict(
+    ret_data = Dict{Symbol,Any}(
         :basis_dim => 2:num_snapshots,
         :weak_greedy_ub => Float64[],
         :weak_greedy_true => Float64[],
@@ -375,7 +380,8 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
     if noise >= 1
         println("Completed computation of all truth solutions")
     end
-    
+    ret_data[:truth_sols] = truth_sols
+
     # Weak greedy algorithm
     maxerr_ub = 0
     maxpi = 0
@@ -393,10 +399,12 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
     res_init1 = residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, reshape(u, (length(u),1)), T=T)
     # Strong greedy algorithm
     qr_proj = qr_projector(truth_sols_mat, num_snapshots)
+    ret_data[:qr_projector] = qr_proj
     u = qr_proj.M[:,1]
     V2, VtAVis2, VtAV2, Vtbis2, Vtb2 = init_affine_rbm(u, Ais, bis, T)
     # POD/PCA
     pca_proj = pca_projector(truth_sols_mat, num_snapshots)
+    ret_data[:pca_projector] = pca_proj
     u = pca_proj.M[:,1]
     V3, VtAVis3, VtAV3, Vtbis3, Vtb3 = init_affine_rbm(u, Ais, bis, T)
 
@@ -457,7 +465,10 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
         # Compute full solution to add to V
         u = truth_sol(maxp)
         u_r = approx_sol(maxp,VtAVis1,Vtbis1,VtAV1,Vtb1)
-        # Make orthogonal to v1,...,vn - Modified Gram-Schmidt
+        # Make orthogonal to v1,...,vn - Modified Gram-Schmidt2
+        for i in eachindex(V1)
+            u .= u .- (V1[i]' * u) .* V1[i]
+        end
         for i in eachindex(V1)
             u .= u .- (V1[i]' * u) .* V1[i]
         end

@@ -1,5 +1,3 @@
-using LinearAlgebra
-
 """
 `singular_values_information(σs)`
 
@@ -107,61 +105,6 @@ function qr_projector(
         return full ? M * (M' * b) : M' * b
     end
     return P
-end
-
-
-"""
-`full_lu(A; steps=-1)`
-
-Performs a completely pivoted LU factorization
-on the matrix `A`, returning permutation vectors `Q`
-and `P`, and lower and upper triangular matrices `L`
-and `U`, such that if all steps are performed, then
-`A[P,Q] = L*U`.
-"""
-function full_lu(A::AbstractMatrix;steps::Int=-1)
-    sA = size(A)
-    if steps == -1
-        steps = minimum(sA)
-    end
-    P = Vector(1:sA[1])
-    Q = Vector(1:sA[2])
-    L = zeros(sA[1],sA[1])
-    for i in 1:sA[1]
-        L[i,i] = 1
-    end
-    U = copy(A)
-    tmp = zeros(maximum(sA))
-    for s in 1:steps
-        maxEl = 0
-        maxIdx = [-1,-1]
-        for j in s:sA[2], i in s:sA[1]
-            absEl = abs(U[i,j])
-            if absEl > maxEl
-                maxIdx[1] = i
-                maxIdx[2] = j
-                maxEl = absEl
-            end
-        end
-        # Perform pivoting
-        P[s],P[maxIdx[1]] = P[maxIdx[1]],P[s]
-        Q[s],Q[maxIdx[2]] = Q[maxIdx[2]],Q[s]
-        tmp[1:sA[2]] .= U[s,:]
-        U[s,:] .= U[maxIdx[1],:]
-        U[maxIdx[1],:] .= tmp[1:sA[2]]
-        tmp[1:sA[1]] .= U[:,s]
-        U[:,s] .= U[:,maxIdx[2]]
-        U[:,maxIdx[2]] .= tmp[1:sA[1]]
-        tmp[1:s-1] .= L[s,1:s-1]
-        L[s,1:s-1] .= L[maxIdx[1],1:s-1]
-        L[maxIdx[1],1:s-1] .= tmp[1:s-1]
-        # Perform Gaussian Elimination
-        for i in s+1:sA[1]
-            L[i,s] = U[i,s] / U[s,s]
-            U[i,:] .= U[i,:] .- L[i,s] .* U[s,:]
-        end
-    end
-    return (P,L,U,Q)
 end
 
 """

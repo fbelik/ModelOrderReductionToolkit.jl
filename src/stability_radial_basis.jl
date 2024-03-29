@@ -1,7 +1,3 @@
-using LinearAlgebra
-using StaticArrays
-using Printf
-
 gaussian_rbf(r,ϵ=1) = exp(-(ϵ*r)^2)
 multiquadric_rbf(r,ϵ=1) = sqrt(1+(ϵ*r)^2)
 inverse_quadratic_rbf(r,ϵ=1) = (1+(ϵ*r)^2)^(-1)
@@ -40,6 +36,32 @@ function (sigma_min_rbf::Sigma_Min_RBF)(p)
 end
 
 """
+`smallest_sval(A, kmaxiter[, noise=1])`
+
+Given a matrix `A`, attempts to compute the smallest singular
+value of it by Krylov iteration and inversion around 0. If
+unsuccessful, computes a full, dense svd.
+"""
+function smallest_sval(A::AbstractMatrix, kmaxiter, noise=1)
+    AtA = A'A
+    # Try invert around 0
+    try
+        res = eigs(AtA, which=:LM, sigma=0, nev=1, ritzvec=false, maxiter=kmaxiter)
+        return real(res[1][1])
+    catch e
+        if !isa(e,Arpack.XYAUPD_Exception)
+            error(e)
+        end
+        if noise >= 1
+            println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
+        end
+        # Perform brute eigen
+        res = eigen!(issparse(AtA) ? collect(AtA) : AtA, sortby=real)
+        return minimum(real.(res.values))
+    end
+end
+
+"""
 `min_sigma_rbf(params, Ais, makeθAi[, ϕ=gaussian_rbf])`
 
 Method to form a interpolatory radial-basis function
@@ -67,6 +89,7 @@ for each `j`.
 function min_sigma_rbf(params::Union{Matrix,Vector},
                        makeA::Function,
                        ϕ::Function=gaussian_rbf;
+                       kmaxiter=1000,
                        noise=1)
 
     if typeof(params) <: Matrix
@@ -89,7 +112,7 @@ function min_sigma_rbf(params::Union{Matrix,Vector},
         p = params[i]
         # Compute minimum singular value
         A = makeA(p)
-        σ_mins[i] = svd(A).S[end]
+        σ_mins[i] = smallest_sval(A, kmaxiter)
         if (i % lPten == 0 && noise >= 1)
             @printf("%.1f%% complete\n", 100*i/lP)
         end
