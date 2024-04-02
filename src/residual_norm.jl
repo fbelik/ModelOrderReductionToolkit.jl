@@ -59,7 +59,7 @@ function residual_norm_affine_init(Ais::AbstractVector,
                                    makeθAi::Function,
                                    bis::AbstractVector,
                                    makeθbi::Function,
-                                   V::AbstractMatrix,
+                                   V::AbstractVector,
                                    X::Union{Nothing,Matrix}=nothing;
                                    T::Type=Float64)
     n = length(bis[1])
@@ -70,6 +70,8 @@ function residual_norm_affine_init(Ais::AbstractVector,
     if !isnothing(X)
         X0 .= X
     end
+    # Form V as a matrix for initialization
+    V_mat = length(V) == 0 ? zeros(T, (size(Ais[1],1),0)) : reduce(hcat, V)
     # Form c_ij = b_i^T X b_j
     cijs = T[]
     for i in 1:Qb
@@ -84,7 +86,7 @@ function residual_norm_affine_init(Ais::AbstractVector,
     dijs = Vector{T}[]
     for Ai in Ais
         for bi in bis
-            dij = V' * Ai' * X0 * bi
+            dij = V_mat' * Ai' * X0 * bi
             push!(dijs, dij)
         end
     end
@@ -92,17 +94,15 @@ function residual_norm_affine_init(Ais::AbstractVector,
     # Store E_ijs as vector of vectors
     Eijs = Vector{Vector{T}}[]
     for i in 1:QA
-        Eii_mat = V' * Ais[i]' * X0 * Ais[i] * V
-        Eii = [@view Eii_mat[:,i] for i in 1:size(Eii_mat)[2]]
+        Eii_mat = V_mat' * Ais[i]' * X0 * Ais[i] * V_mat
+        Eii = eachcol(Eii_mat)#[@view Eii_mat[:,i] for i in 1:size(Eii_mat)[2]]
         push!(Eijs, Eii)
         for j in i+1:QA
-            Eij_mat = V' * Ais[i]' * X0 * Ais[j] * V
-            Eij = [@view Eij_mat[:,i] for i in 1:size(Eij_mat)[2]]
+            Eij_mat = V_mat' * Ais[i]' * X0 * Ais[j] * V_mat
+            Eij = eachcol(Eij_mat)#[@view Eij_mat[:,i] for i in 1:size(Eij_mat)[2]]
             push!(Eijs, Eij)
         end
     end
-    # Store V as vector of vectors
-    V = Vector{T}[V[:,i] for i in 1:size(V)[2]]
     return Affine_Residual_Init(cijs, dijs, Eijs, Ais, makeθAi, 
                                 bis, makeθbi, n, QA, Qb, V, X0)
 end
@@ -114,7 +114,7 @@ Method to add a vector `v` to the columns of the matrix `V`
 in the `Affine_Residual_Init` object, `res_init`, without
 recomputing all terms. Must specify type `T`.
 """
-function add_col_to_V!(res_init::Affine_Residual_Init, v::Vector, T::Type)
+function add_col_to_V!(res_init::Affine_Residual_Init, v::Vector, T::Type=Float64)
     # Add to end of each dij vector
     idx = 1
     for Ai in res_init.Ais
@@ -192,116 +192,153 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init,
             idx += 1
         end
     end
-    # Sum across dijs
-    cur = 0.0
-    idx = 1
-    for i in 1:res_init.QA
-        for j in 1:res_init.Qb
-            cur -= θAis[i]' * θbis[j] * (u_r' * res_init.dijs[idx])
-            idx += 1
-        end
-    end
-    res += real(cur + cur')
-    # Sum across Eijs
-    idx = 1
-    for i in 1:res_init.QA
+    if length(res_init.V) > 0
+        # Sum across dijs
         cur = 0.0
-        for k in eachindex(u_r)
-            cur += u_r[k] * (u_r' * res_init.Eijs[idx][k])
+        idx = 1
+        for i in 1:res_init.QA
+            for j in 1:res_init.Qb
+                cur -= θAis[i]' * θbis[j] * (u_r' * res_init.dijs[idx])
+                idx += 1
+            end
         end
-        res += real(θAis[i] * θAis[i]' * cur)
-        idx += 1
-        for j in i+1:res_init.QA
+        res += real(cur + cur')
+        # Sum across Eijs
+        idx = 1
+        for i in 1:res_init.QA
             cur = 0.0
             for k in eachindex(u_r)
                 cur += u_r[k] * (u_r' * res_init.Eijs[idx][k])
             end
-            cur *= θAis[i]' * θAis[j] 
-            res += real(cur + cur')
-            # res += θAis[i]' * θAis[j] * cur
-            # res += θAis[i] * θAis[j]' * cur'
+            res += real(θAis[i] * θAis[i]' * cur)
             idx += 1
+            for j in i+1:res_init.QA
+                cur = 0.0
+                for k in eachindex(u_r)
+                    cur += u_r[k] * (u_r' * res_init.Eijs[idx][k])
+                end
+                cur *= θAis[i]' * θAis[j] 
+                res += real(cur + cur')
+                idx += 1
+            end
         end
     end
     return sqrt(max(0, res))
 end
 
-
-"""
-`residual_norm_explicit(u_approx, p, makeA, makeb, X=nothing)`
-
-Method that computes the `X`-norm of the residual, 
-`r(u_r,p) = A(p) (u - u_approx) = b(p) - A(p) u_approx` explicitly
-where `u` is the solution to `A(p) u = b(p)`, and `u_approx` is
-an approximation, `u ≈ u_approx`.
-
-Pass as input the approximation vector `u_approx`, the
-corresponding parameter, `p`, the method `makeA(p)` for
-constructing the matrix `A(p)`, and the method `makeb(p)`
-for constructing the vector `b(p)`.
-
-Optionally pass in a matrix `X` from which the `X`-norm of
-the residual will be computed. If `X` remains as `nothing`,
-then will choose it to be the identity matrix to compute the
-2-norm of the residual.
-"""
-function residual_norm_explicit(u_approx::AbstractVector,
-                                p::AbstractVector,
-                                makeA::Function,
-                                makeb::Function,
-                                X::Union{Nothing,Matrix}=nothing)
-    # Residual defined to be A(p)(x-Vu_r) = b(p) - A(p)Vu_r
-    b = makeb(p)
-    A = makeA(p)
-    r = b .- A*u_approx
-    if isnothing(X)
-        return sqrt(r'r)
-    else
-        return sqrt(r'*X*r)
-    end
+mutable struct Affine_Residual_Init_Proj
+    cijs::Vector
+    yis::Vector
+    Gijs::Vector
+    Ais::Vector
+    makeθAi::Function
+    bis::Vector
+    makeθbi::Function
+    n::Int
+    QA::Int
+    Qb::Int
+    V::Vector
+    X::Matrix
 end
 
-"""
-`residual_norm_explicit(u_approx, p, Ais, makeθAi, bis, makeθbi, X=nothing)`
-
-Method that computes the `X`-norm of the residual, 
-`r(u_r,p) = A(p) (u - u_approx) = b(p) - A(p) u_approx` explicitly
-where `x` is the solution to `A(p) u = b(p)`, and `u_approx` is
-an approximation, `u ≈ u_approx`.
-
-Pass as input the approximation vector `u_approx`, the
-corresponding parameter, `p`, a vector of matrices `Ais`, 
-and a function `makeθAi` such that the affine construction 
-of `A` is given by `A(p) = ∑_{i=1}^QA makeθAi(p,i) * Ais[i]`, 
-and similarly a vector of vectors `bis` and a function `makeθbi` 
-such that the affine construction of `b` is given by 
-`b(p) = ∑_{i=1}^Qb makeθbi(p,i) * bis[i]`.
-
-Optionally pass in a matrix `X` from which the `X`-norm of
-the residual will be computed. If `X` remains as `nothing`,
-then will choose it to be the identity matrix to compute the
-2-norm of the residual.
-"""
-function residual_norm_explicit(u_approx::AbstractVector,
-                                p::AbstractVector,
-                                Ais::AbstractVector,
-                                makeθAi::Function,
-                                bis::AbstractVector,
-                                makeθbi::Function,
-                                X::Union{Nothing,Matrix}=nothing)
-    makeA(p) = begin
-        A = zeros(size(Ais[1]))
-        for i in eachindex(Ais)
-            A .+= makeθAi(p,i) .* Ais[i]
-        end
-        A
+function residual_norm_affine_proj_init(Ais::AbstractVector,
+                                        makeθAi::Function,
+                                        bis::AbstractVector,
+                                        makeθbi::Function,
+                                        V::AbstractVector,
+                                        X::Union{Nothing,Matrix}=nothing;
+                                        T::Type=Float64)
+    n = length(bis[1])
+    QA = length(Ais)
+    Qb = length(bis)
+    # Form X if nothing
+    X0 = Matrix{T}(I, (n,n))
+    if !isnothing(X)
+        X0 .= X
     end
-    makeb(p) = begin
-        b = zeros(length(bis[1]))
-        for i in eachindex(bis)
-            b .+= makeθbi(p,i) .* bis[i]
+    # Form V as a matrix for initialization
+    V_mat = length(V) == 0 ? zeros(T, (size(Ais[1],1),0)) : reduce(hcat, V)
+    # Form c_ij = b_i^T X b_j
+    cijs = T[]
+    for i in 1:Qb
+        cij = bis[i]' * X0 * bis[i]
+        push!(cijs, cij)
+        for j in i+1:Qb
+            cij = bis[i]' * X0 * bis[j]
+            push!(cijs, cij)
         end
-        b
     end
-    return residual_norm_explicit(u_approx, p, makeA, makeb, X)
+    # Form yis (orthonormal basis for A V)
+    yis = Vector{T}[]
+    for i in 1:QA
+        for j in eachindex(V)
+            u = Ais[i] * V[j]
+            nu = orthogonalize_mgs2!(u, yis)
+            if nu != 0
+                push!(yis, u)
+            end
+        end
+    end
+    # Form Gijs (component of A_i V u_r in span of yis)
+    # G_ij = V^T A_i^T y_j
+    Gijs = Vector{Vector{T}}[]
+    for (i,Ai) in enumerate(Ais)
+        push!(Gijs, Vector{T}[])
+        for yj in yis
+            push!(Gijs[i], V_mat' * Ai' * yj)
+        end
+    end
+    return Affine_Residual_Init_Proj(cis, yis, Gijs, Ais, makeθAi, 
+                                     bis, makeθbi, n, QA, Qb, V, X0)
+end
+
+function add_col_to_V!(res_init::Affine_Residual_Init_Proj, v::Vector, T::Type=Float64)
+    QA = length(res_init.Ais)
+    Qb = length(res_init.bis)
+    # Append to yis (orthonormal basis for A V)
+    # and to Gijs
+    for i in 1:QA
+        u = Ais[i] * v
+        nu = orthogonalize_mgs2!(u, yis)
+        if nu != 0
+            ## Need to add to end of each col of Gijs
+            ## and to add new col to Gijs
+            for (j,Ai) in enumerate(Ais)
+                for k in eachindex(yis)
+                    newcolval = u' * Ai' * yis[k]
+                    push!(Gijs[j][k], newcolval)
+                end
+                # Add new col
+                newcol = zeros(length(res_init.V)+1)
+                for k in eachindex(res_init.V)
+                    newcol[k] = res_init.V[k]' * Ai' * u
+                end
+                newcol[end] = 0
+            end
+            push!(yis, u)
+        end
+    end
+    # Append to V matrix
+    push!(res_init.V, v)
+end
+
+function residual_norm_affine_online(res_init::Affine_Residual_Init_Proj,
+                                     u_r::AbstractVector,
+                                     p::AbstractVector)
+    θbis = [res_init.makeθbi(p,i) for i in 1:res_init.Qb]
+    θAis = [res_init.makeθAi(p,i) for i in 1:res_init.QA]
+    # b_par = Y Y' b = ∑_i θbi(p,i) cis[i]
+    # b_perp = b - ∑_i θbi(p,i) cis[i]
+    # sqrt(||b_par - A V u_r||^2 + ||b_perp||^2)
+    # Need to compute following
+    # 1) b_par'b_par (corrected cij terms as will change with V)
+    # 2) b_par'(A V u_r) (corrected dij terms)
+    # 3) (A V u_r)'(A V u_r) (see previous work for Eijs)
+    # 4) b_perp'b_perp (corrected cij terms)
+    # We can compute ||b||^2 easily (see cijs before)
+    # and by orthogonality, we have that 
+    # ||b||^2 = ||b_par + b_perp||^2 = ||b_par||^2 + ||b_perp||^2
+    # So only need to compute for one of the two, and for b
+
+    return 0.0
 end

@@ -148,3 +148,26 @@ function smallest_real_pos_eigpair(A::AbstractMatrix, kmaxiter, noise=1)
         return (minimum(real.(res.values)), res.vectors[:,1])
     end
 end
+
+"""
+`orthonormalize_mgs2!(u, V)`
+
+Given a vector of vectors `V`, and a new vector `u`,
+orthogonalize `u` with respect to `V`, and computes its
+norm `nu`. If `nu != 0`, divides `u` by `nu` and returns 
+`nu`. If `nu == 0`, then `u` lives in the span of `V`, and
+`0` is returned.
+"""
+function orthonormalize_mgs2!(u::AbstractVector,V::AbstractVector{<:AbstractVector})
+    for v in V
+        u .-= dot(v, u) .* v
+    end
+    for v in V
+        u .-= dot(v, u) .* v
+    end
+    nu = norm(u)
+    if nu != 0
+        u ./= nu
+    end
+    return nu
+end
