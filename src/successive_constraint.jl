@@ -65,12 +65,15 @@ function (scm_init::SCM_Init)(p::AbstractVector; noise=0)
 end
 
 """
-`initialize_SCM_SPD(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[optimizer=Tulip.Optimizer,noise=1]) = SCM_Init`
+`initialize_SCM_SPD(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[T=Float64,optimizer=Tulip.Optimizer,kmaxiter=1000,noise=1]) = SCM_Init`
 
 Method to initialize an `SCM_Init` object to perform the SCM
 on an affinely-parameter-dependent symmetric positive definite matrix
 `A(p) = ∑ makeθAi(p,i) Ais[i]` to compute a lower-bound
 approximation to the minimum singular value (or eigenvalue) of `A(p)`.
+
+If wish to use complex matrices, pass in `T=ComplexF64`, however,
+makeθAi must be real.
 
 Parameters:
 
@@ -90,8 +93,14 @@ and an index such that `A(p) = ∑ makeθAi(p,i) Ais[i]`
 `ϵ`: Relative difference allowed between upper-bound and lower-bound approximation
 on the parameter discretization (between 0 and 1)
 
+`T`: Datatype for matrix initialization, default `Float64`. If using 
+complex matrices, pass `T=ComplexF64`.
+
 `optimizer`: Optimizer to pass into JuMP Model method for solving
 linear programs
+
+`kmaxiter`: Maximum number of iterations used in iterating eigensolver before
+defaulting to full-dense eigensolve.
 
 `noise`: Determines amount of printed information, between 0 and 2 with 0 being nothing
 displayed; default 1
@@ -129,10 +138,6 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
         maxeig = largest_real_eigval(A, kmaxiter, noise)
         push!(B, (mineig, maxeig))
     end
-    makeθAi_herm(p,i) = begin
-        θAi = makeθAi(p,i)
-        return 0.5 * (θAi + θAi')
-    end 
     # Linear program resizing constant
     R = 0.0
     for i in 1:QA
@@ -143,7 +148,7 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
     J(p,y) = begin
         res = 0.0
         for i in 1:QA
-            res += makeθAi_herm(p,i) * y[i]
+            res += makeθAi(p,i) * y[i]
         end
         real(res)
     end
@@ -181,12 +186,15 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
 end
 
 """
-`initialize_SCM_Noncoercive(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[optimizer=Tulip.Optimizer,noise=1]) = SCM_Init`
+`initialize_SCM_Noncoercive(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[T=Float64,optimizer=Tulip.Optimizer,kmaxiter=1000,noise=1]) = SCM_Init`
 
 Method to initialize an `SCM_Init` object to perform the SCM
 on an affinely-parameter-dependent matrix
 `A(p) = ∑ makeθAi(p,i) Ais[i]` to compute a lower-bound
 approximation to the minimum singular value of `A`.
+
+If wish to use complex matrices, pass in `T=ComplexF64`, however,
+makeθAi must be real.
 
 Parameters:
 
@@ -206,8 +214,14 @@ and an index such that `A(p) = ∑ makeθAi(p,i) Ais[i]`
 `ϵ`: Relative difference allowed between upper-bound and lower-bound approximation
 on the parameter discretization (between 0 and 1)
 
+`T`: Datatype for matrix initialization, default `Float64`. If using 
+complex matrices, pass `T=ComplexF64`.
+
 `optimizer`: Optimizer to pass into JuMP Model method for solving
 linear programs
+
+`kmaxiter`: Maximum number of iterations used in iterating eigensolver before
+defaulting to full-dense eigensolve.
 
 `noise`: Determines amount of printed information, between 0 and 2 with 0 being nothing
 displayed; default 1
@@ -236,22 +250,18 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
     # Form boundary set by solving eigenvalue problems on each A_i^T A_j
     QA = length(Ais)
     AiAjs_herm = []
+    B = Tuple{Float64,Float64}[]
     for i in 1:QA
         for j in i:QA
             AiAj = Ais[i]' * Ais[j]
             AiAj .= 0.5 .* (AiAj .+ AiAj')
             push!(AiAjs_herm, AiAj)
+            mineig = smallest_real_eigval(AiAj, kmaxiter, noise)
+            maxeig = largest_real_eigval(AiAj, kmaxiter, noise)
+            push!(B, (mineig, maxeig))
         end
     end
     QAA = length(AiAjs_herm)
-    B = Tuple{Float64,Float64}[]
-    # Real numerical range of A equals real numerical range of (1/2)(A+A^T)
-    for i in 1:QAA
-        AA = AiAjs_herm[i]
-        mineig = smallest_real_eigval(AA, kmaxiter, noise)
-        maxeig = largest_real_eigval(AA, kmaxiter, noise)
-        push!(B, (mineig, maxeig))
-    end
     # Linear program resizing constant
     R = 0.0
     for i in 1:QAA
@@ -264,11 +274,11 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
         idx = 1
         for i in 1:QA
             θAi = makeθAi(p,i)
-            res += 0.5 * real(θAi'θAi + (θAi'θAi)') * y[idx]
+            res += θAi^2 * y[idx]
             idx += 1
             for j in (i+1):QA
                 θAj = makeθAi(p,j)
-                res += real(θAi'θAj + (θAi'θAj)') * y[idx]
+                res += 2 * θAi * θAj * y[idx]
                 idx += 1
             end
         end

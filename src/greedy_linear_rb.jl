@@ -299,35 +299,53 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
                               makeθbi::Function,
                               approx_stability_factor::Function,
                               ϵ=1e-2;
-                              comp_explicit_residual::Bool=false,
+                              res_calc::Int=2,
                               T::Type=Float64,
                               max_snapshots=-1,
                               noise=1)
     # Create compute_res_norm(u_r,p) and update_res_norm!(v) methods
-    if comp_explicit_residual
-        compute_res_norm = (u_r,p) -> begin 
-            # Form V u_r
-            ualloc1 .= 0
-            for i in eachindex(V)
-                ualloc1 .+= u_r[i] .* V[i]
+    if res_calc==0
+        ualloc1 = zeros(T, size(Ais[1],1))
+        ualloc2 = zeros(T, size(Ais[1],1))
+        V = Vector{T}[]
+        AiVjs = Vector{Vector{T}}[]
+        for i in eachindex(Ais)
+            AiVj = Vector{T}[]
+            for j in eachindex(V)
+                push!(AiVj, Ais[i] * V[j])
             end
+            push!(AiVjs, AiVj)
+        end
+        compute_res_norm = (u_r,p) -> begin 
             # Form A V u_r
-            ualloc2 .= 0
+            ualloc1 .= 0
             for i in eachindex(Ais)
-                ualloc2 .+= makeθAi(p,i) .* (Ais[i] * ualloc1)
+                for j in eachindex(V)
+                    ualloc1 .+= makeθAi(p,i) .* u_r[j] .* AiVjs[i][j]
+                end
             end
             # Form b
-            ualloc1 .= 0
+            ualloc2 .= 0
             for i in eachindex(bis)
-                ualloc1 .+= makeθbi(p,i) .* bis[i]
+                ualloc2 .+= makeθbi(p,i) .* bis[i]
             end
-            ualloc1 .-= ualloc2 # b - A V u_r
-            return sqrt(real(dot(ualloc1,ualloc1)))
+            ualloc2 .-= ualloc1 # b - A V u_r
+            return sqrt(real(dot(ualloc2,ualloc2)))
         end
-        update_res_norm! = (v) -> push!(V, v)
-    else
+        update_res_norm! = (v) -> begin 
+            push!(V, v)
+            for i in eachindex(Ais)
+                push!(AiVjs[i], Ais[i] * v)
+            end
+        end
+    elseif res_calc == 1
         # Initialize res_init to compute residual norm
         res_init = residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, Vector{T}[], T=T)
+        compute_res_norm = (u_r, p) -> residual_norm_affine_online(res_init,u_r,p)
+        update_res_norm! = (v) -> add_col_to_V!(res_init, v, T)
+    else
+        # Initialize res_init to compute residual norm
+        res_init = residual_norm_affine_proj_init(Ais, makeθAi, bis, makeθbi, Vector{T}[], T=T)
         compute_res_norm = (u_r, p) -> residual_norm_affine_online(res_init,u_r,p)
         update_res_norm! = (v) -> add_col_to_V!(res_init, v, T)
     end
@@ -387,7 +405,7 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
                             makeθbi::Function,
                             approx_stability_factor::Function,
                             num_snapshots=10;
-                            comp_explicit_residual::Bool=false,
+                            res_calc::Int=2,
                             T::Type=Float64,
                             noise=1)
     if param_disc isa AbstractMatrix
@@ -411,30 +429,45 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
     # Weak greedy algorithm
     A_alloc, b_alloc, ualloc1, ualloc2, V1, VtAVis1, Vtbis1, ps_greedy = init_affine_rbm(Ais, bis, T)
     # Create compute_res_norm(u_r,p) and update_res_norm!(v) methods
-    if comp_explicit_residual
-        compute_res_norm = (u_r,p) -> begin 
-            # Form V u_r
-            ualloc1 .= 0
-            for i in eachindex(V1)
-                ualloc1 .+= u_r[i] .* V1[i]
+    if res_calc == 0
+        AiVjs = Vector{Vector{T}}[]
+        for i in eachindex(Ais)
+            AiVj = Vector{T}[]
+            for j in eachindex(V1)
+                push!(AiVj, Ais[i] * V1[j])
             end
+            push!(AiVjs, AiVj)
+        end
+        compute_res_norm = (u_r,p) -> begin 
             # Form A V u_r
-            ualloc2 .= 0
+            ualloc1 .= 0
             for i in eachindex(Ais)
-                ualloc2 .+= makeθAi(p,i) .* (Ais[i] * ualloc1)
+                for j in eachindex(V1)
+                    ualloc1 .+= makeθAi(p,i) .* u_r[j] .* AiVjs[i][j]
+                end
             end
             # Form b
-            ualloc1 .= 0
+            ualloc2 .= 0
             for i in eachindex(bis)
-                ualloc1 .+= makeθbi(p,i) .* bis[i]
+                ualloc2 .+= makeθbi(p,i) .* bis[i]
             end
-            ualloc1 .-= ualloc2 # b - A V u_r
-            return sqrt(real(dot(ualloc1,ualloc1)))
+            ualloc2 .-= ualloc1 # b - A V u_r
+            return sqrt(real(dot(ualloc2,ualloc2)))
         end
-        update_res_norm! = (v) -> push!(V1, v)
-    else
+        update_res_norm! = (v) -> begin 
+            push!(V1, v)
+            for i in eachindex(Ais)
+                push!(AiVjs[i], Ais[i] * v)
+            end
+        end
+    elseif res_calc == 1
         # Initialize res_init to compute residual norm
         res_init = residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, V1, T=T)
+        compute_res_norm = (u_r, p) -> residual_norm_affine_online(res_init,u_r,p)
+        update_res_norm! = (v) -> add_col_to_V!(res_init, v, T)
+    else
+        # Initialize res_init to compute residual norm
+        res_init = residual_norm_affine_proj_init(Ais, makeθAi, bis, makeθbi, Vector{T}[], T=T)
         compute_res_norm = (u_r, p) -> residual_norm_affine_online(res_init,u_r,p)
         update_res_norm! = (v) -> add_col_to_V!(res_init, v, T)
     end
