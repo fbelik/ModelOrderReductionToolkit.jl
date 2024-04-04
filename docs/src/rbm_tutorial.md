@@ -318,7 +318,7 @@ for i in 1:6
     idx = idxs[i]
     p = params[idx]
     plot!(xs, S[:,idx], c=colors[i], label=false)
-    u_r = greedy_sol(p,false) # full=false, size r vector instead of N
+    u_r = greedy_sol(p,full=false) # full=false, size r vector instead of N
     plot!(xs, V * u_r, c=colors[i], label=false, ls=:dash)
 end
 title!("Truth and weak greedy solutions")

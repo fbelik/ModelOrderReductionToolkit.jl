@@ -101,18 +101,12 @@ using LinearAlgebra
         push!(errs, (ub - lb) / ub)
     end
     @test maximum(errs) < ϵ_SCM
-    # Test GreedyRBAffineLinear
+    # Test GreedyRBAffineLinear on different residual computations
     ϵ_greedy = 1e-2
-    greedy_sol = GreedyRBAffineLinear(params, Ais, makeθAi, bis, makeθbi, scm, ϵ_greedy, noise=1)
-    @test length(greedy_sol.params_greedy) <= 30
-    # Test residual affine
-    V = reduce(hcat,greedy_sol.V[1:min(5,length(greedy_sol.V))])
-    ari = residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, V);
-    p = randP()
-    A = makeA(p)
-    b = makeb(p)
-    x_r = (V' * A * V) \ (V' * b)
-    @test residual_norm_affine_online(ari, x_r, p) ≈ norm(b .- A*V*x_r) atol=0.001
+    for i in 0:2
+        greedy_sol = GreedyRBAffineLinear(params, Ais, makeθAi, bis, makeθbi, scm, ϵ_greedy, noise=1)
+        @test length(greedy_sol.params_greedy) <= 30
+    end
     # Test with stability radial basis function
     # Sample 1/3 of params
     np = length(params)

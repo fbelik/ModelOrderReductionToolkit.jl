@@ -20,15 +20,15 @@ mutable struct Affine_Residual_Init
     makeθAi::Function
     bis::Vector
     makeθbi::Function
-    n::Int
     QA::Int
     Qb::Int
     V::Vector
+    T::Type
     X::Matrix
 end
 
 """
-`residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, V[, X0=nothing, T=Float64])`
+`residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, V[, X=nothing, T=Float64])`
 
 Method that constructs the necessary vectors and matrices to
 quickly compute the `X`-norm of the residual, 
@@ -51,7 +51,7 @@ Optionally pass in a matrix `X` from which the `X`-norm of
 the residual will be computed in the method
 `residual_norm_affine_online`. If `X` remains as `nothing`,
 then will choose it to be the identity matrix to compute the
-2-norm of the residual.
+2-norm of the residual. (NOT YET IMPLEMENTED)
 
 If using complex numbers, specify `T=ComplexF64`.
 """
@@ -104,17 +104,17 @@ function residual_norm_affine_init(Ais::AbstractVector,
         end
     end
     return Affine_Residual_Init(cijs, dijs, Eijs, Ais, makeθAi, 
-                                bis, makeθbi, n, QA, Qb, V, X0)
+                                bis, makeθbi, QA, Qb, V, T, X0)
 end
 
 """
-`add_col_to_V!(res_init, v, T)`
+`add_col_to_V!(res_init, v)`
 
 Method to add a vector `v` to the columns of the matrix `V`
 in the `Affine_Residual_Init` object, `res_init`, without
-recomputing all terms. Must specify type `T`.
+recomputing all terms.
 """
-function add_col_to_V!(res_init::Affine_Residual_Init, v::Vector, T::Type=Float64)
+function add_col_to_V!(res_init::Affine_Residual_Init, v::Vector)
     # Add to end of each dij vector
     idx = 1
     for Ai in res_init.Ais
@@ -133,7 +133,7 @@ function add_col_to_V!(res_init::Affine_Residual_Init, v::Vector, T::Type=Float6
             push!(res_init.Eijs[idx][k], newrowval)
         end
         # Form new column of V
-        Eij_col = zeros(T, length(res_init.V)+1)
+        Eij_col = zeros(res_init.T, length(res_init.V)+1)
         for k in 1:length(res_init.V)
             newcolval = res_init.V[k]' * res_init.Ais[i]' * res_init.X' * res_init.Ais[i] * v
             Eij_col[k] = newcolval
@@ -148,7 +148,7 @@ function add_col_to_V!(res_init::Affine_Residual_Init, v::Vector, T::Type=Float6
                 push!(res_init.Eijs[idx][k], newrowval)
             end
             # Form new column of V
-            Eij_col = zeros(T, length(res_init.V)+1)
+            Eij_col = zeros(res_init.T, length(res_init.V)+1)
             for k in 1:length(res_init.V)
                 newcolval = res_init.V[k]' * res_init.Ais[i]' * res_init.X' * res_init.Ais[j] * v
                 Eij_col[k] = newcolval
@@ -226,7 +226,21 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init,
     return sqrt(max(0, res))
 end
 
-mutable struct Affine_Residual_Init_Proj
+"""
+`Affine_Residual_Init`
+
+A struct for containing the necessary vectors
+and matrices for quickly compute the `X`-norm of the
+residual, `r(u_r,p) = A(p) (u - V u_r) = b(p) - A(p) V u_r`,
+by taking advantage of affine parameter dependence of `A(p)`
+and `b(p)`.
+
+Here, `u` solves `A(p) u = b(p)` with `A` and `b`
+having affine parameter dependence, and `V` is
+a matrix with columns defining bases for approximation
+spaces `u ≈ V u_r`.
+"""
+struct Affine_Residual_Init_Proj
     F::UpdatableQR
     qijs::Vector
     ij_idxs::Vector
@@ -236,14 +250,45 @@ mutable struct Affine_Residual_Init_Proj
     makeθAi::Function
     bis::Vector
     makeθbi::Function
-    n::Int
     QA::Int
     Qb::Int
     V::Vector
+    T::Type
     X::Matrix
 end
 
-# TODO Add docstrings
+"""
+`residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, V[, X=nothing, T=Float64])`
+
+Method that constructs the necessary vectors and matrices to
+quickly compute the `X`-norm of the residual, 
+`r(u_r,p) = A(p) (u - V u_r) = b(p) - A(p) V u_r`,
+by taking advantage of affine parameter dependence of `A(p)`
+and `b(p)`.
+
+Does this in a more numerically stable way by computing
+the projections of `b(p)` onto the span of the columns of 
+`A(p) V`, so no negative cross-term needs to be evaluated.
+
+Pass as input a vector of matrices `Ais`, and a function
+`makeθAi` such that the affine construction of `A` is given by
+`A(p) = ∑_{i=1}^QA makeθAi(p,i) * Ais[i]`, and similarly
+a vector of vectors `bis` and a function `makeθbi` such that
+the affine construction of `b` is given by 
+`b(p) = ∑_{i=1}^Qb makeθbi(p,i) * bis[i]`.
+
+Additionally, pass in a matrix `V` which contains as columns
+a basis for a reduced space, `u ≈ V u_r` with the dimension
+of `u_r` less than that of `u`.
+
+Optionally pass in a matrix `X` from which the `X`-norm of
+the residual will be computed in the method
+`residual_norm_affine_online`. If `X` remains as `nothing`,
+then will choose it to be the identity matrix to compute the
+2-norm of the residual. (NOT YET IMPLEMENTED)
+
+If using complex numbers, specify `T=ComplexF64`.
+"""
 function residual_norm_affine_proj_init(Ais::AbstractVector,
                                         makeθAi::Function,
                                         bis::AbstractVector,
@@ -300,10 +345,17 @@ function residual_norm_affine_proj_init(Ais::AbstractVector,
         end
     end
     return Affine_Residual_Init_Proj(F, qijs, ij_idxs, b_par_ijks, b_perp_idxs,
-                                     Ais, makeθAi, bis, makeθbi, n, QA, Qb, V, X0)
+                                     Ais, makeθAi, bis, makeθbi, QA, Qb, V, T, X0)
 end
 
-function add_col_to_V!(res_init::Affine_Residual_Init_Proj, v::Vector, T::Type=Float64)
+"""
+`add_col_to_V!(res_init, v)`
+
+Method to add a vector `v` to the columns of the matrix `V`
+in the `Affine_Residual_Init_Proj` object, `res_init`, without
+recomputing all terms.
+"""
+function add_col_to_V!(res_init::Affine_Residual_Init_Proj, v::Vector)
     QA = length(res_init.Ais)
     Qb = length(res_init.bis)
     for i in 1:Qb
@@ -312,7 +364,7 @@ function add_col_to_V!(res_init::Affine_Residual_Init_Proj, v::Vector, T::Type=F
     # Update vectors of Q
     for (i,Ai) in enumerate(res_init.Ais)
         UpdatableQRFactorizations.add_column!(res_init.F, Ai * v)
-        qij = zeros(T, res_init.F.n)
+        qij = zeros(res_init.T, res_init.F.n)
         qij[res_init.F.m] = 1
         for m in res_init.F.rot_index:-1:1
             lmul!(res_init.F.rotations_full[m]', qij)
@@ -325,7 +377,7 @@ function add_col_to_V!(res_init::Affine_Residual_Init_Proj, v::Vector, T::Type=F
     res_init.b_perp_idxs .+= QA
     # Update coefficients for b_par
     for i in 1:QA
-        b_par_ks = zeros(T,Qb)
+        b_par_ks = zeros(res_init.T,Qb)
         push!(res_init.b_par_ijks[i], b_par_ks)
         for k in 1:Qb
             b_par_ks[k] = res_init.qijs[i][end]' * res_init.bis[k]
@@ -338,6 +390,23 @@ function add_col_to_V!(res_init::Affine_Residual_Init_Proj, v::Vector, T::Type=F
     end
 end
 
+"""
+`residual_norm_affine_online(res_init, u_r, p)`
+
+Method that given `res_init`, an `Affine_Residual_Init_Proj`
+object, computes the 2-norm of the residual, 
+`r(u_r,p) = A(p) (u - V u_r) = b(p) - A(p) V u_r`,
+by taking advantage of affine parameter dependence of `A(p)`
+and `b(p)`.
+
+Does this in a more numerically stable way by computing
+the projections of `b(p)` onto the span of the columns of 
+`A(p) V`, so no negative cross-term needs to be evaluated.
+
+Pass as input the `Affine_Residual_Init` object, `res_init`,
+a reduced vector `u_r`, and the corresponding parameter
+vector `p`.
+"""
 function residual_norm_affine_online(res_init::Affine_Residual_Init_Proj,
                                      u_r::AbstractVector,
                                      p::AbstractVector)
@@ -358,7 +427,7 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init_Proj,
                     cur -= θAis[k] * u_r[l] * res_init.F.R_full[R_row,R_col]
                 end
             end
-            res += cur^2
+            res += real(cur' * cur)
         end
     end
     # Compute ||b_perp(p)||
@@ -369,7 +438,7 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init_Proj,
             col = res_init.b_perp_idxs[j]
             cur += (θbis[j] * res_init.F.R_full[row,col])
         end
-        res += cur^2
+        res += real(cur' * cur)
     end
     return sqrt(res)
 end
