@@ -7,6 +7,7 @@ using JuMP
 using Tulip
 using NearestNeighbors
 using StaticArrays
+using UpdatableQRFactorizations
 include("la_utils.jl")
 include("projections.jl")
 include("successive_constraint.jl")
@@ -35,6 +36,7 @@ export min_sigma_rbf
 export update_sigma_rbf!
 # residual_norm.jl exports
 export residual_norm_affine_init
+export residual_norm_affine_proj_init
 export residual_norm_affine_online
 export residual_norm_explicit
 export add_col_to_V!
