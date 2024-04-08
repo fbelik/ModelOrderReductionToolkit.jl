@@ -74,31 +74,31 @@ greedy_sol = GreedyRBAffineLinear(params, Ais, makeθAi, bis, makeθbi, scm, ϵ_
 Galerkin projection is used onto an 4 dimensional space:
     V&#39; A(p) V u_r = V&#39; b(p),
     V u_r ≈ u = A(p)^(-1) b(p).</code></pre><p>We can access the greedily chosen reduced basis by calling (note that for computational purposes, <span>$V$</span> is stored as a vector of vectors instead of a matrix)</p><pre><code class="language-julia hljs">V = reduce(hcat, greedy_sol.V)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">999×4 Matrix{Float64}:
- 0.00011594   -3.99159e-5   0.000289963  0.000183849
- 0.000230899  -8.05069e-5   0.000578683  0.000364545
- 0.00034489   -0.000121765  0.00086616   0.000542139
- 0.000457928  -0.000163683  0.0011524    0.00071668
- 0.000570029  -0.000206253  0.00143739   0.000888219
- 0.000681206  -0.000249468  0.00172115   0.0010568
- 0.000791473  -0.000293323  0.00200367   0.00122248
- 0.000900845  -0.000337811  0.00228496   0.00138531
- 0.00100933   -0.000382927  0.00256502   0.00154532
- 0.00111695   -0.000428666  0.00284385   0.00170258
+ 0.000101617   6.86259e-5   0.000289963  0.000183849
+ 0.00020211    0.000137649  0.000578683  0.000364545
+ 0.000301495   0.000207065  0.00086616   0.000542139
+ 0.00039979    0.000276872  0.0011524    0.00071668
+ 0.00049701    0.000347065  0.00143739   0.000888219
+ 0.00059317    0.000417642  0.00172115   0.0010568
+ 0.000688286   0.0004886    0.00200367   0.00122248
+ 0.000782373   0.000559938  0.00228496   0.00138531
+ 0.000875445   0.000631653  0.00256502   0.00154532
+ 0.000967516   0.000703744  0.00284385   0.00170258
  ⋮                                       
- 0.0102647     0.102717     0.0530238    0.0282971
- 0.0101639     0.103207     0.0531772    0.0282585
- 0.0100636     0.103694     0.0533295    0.0282183
- 0.00996378    0.104177     0.0534808    0.0281765
- 0.00986442    0.104656     0.0536311    0.0281332
- 0.0097655     0.105132     0.0537804    0.0280884
- 0.00966702    0.105605     0.0539288    0.028042
- 0.00956898    0.106075     0.0540761    0.0279943
- 0.00947135    0.106541     0.0542224    0.0279451</code></pre><p>We can now visualize these solutions by calling <code>greedy_sol(p)</code> on a paramater vector <code>p</code>.</p><pre><code class="language-julia hljs">plt = plot()
+ 0.0365594    -0.0965379    0.0530238    0.0282971
+ 0.0365892    -0.0970373    0.0531772    0.0282585
+ 0.0366186    -0.0975332    0.0533295    0.0282183
+ 0.0366475    -0.0980255    0.0534808    0.0281765
+ 0.0366759    -0.0985145    0.0536311    0.0281332
+ 0.0367039    -0.099        0.0537804    0.0280884
+ 0.0367315    -0.0994822    0.0539288    0.028042
+ 0.0367586    -0.099961     0.0540761    0.0279943
+ 0.0367852    -0.100437     0.0542224    0.0279451</code></pre><p>We can now visualize these solutions by calling <code>greedy_sol(p)</code> on a paramater vector <code>p</code>.</p><pre><code class="language-julia hljs">plt = plot()
 for i in 1:6
     idx = idxs[i]
     p = params[idx]
     plot!(xs, S[:,idx], c=colors[i], label=false)
-    u_r = greedy_sol(p,false) # full=false, size r vector instead of N
+    u_r = greedy_sol(p,full=false) # full=false, size r vector instead of N
     plot!(xs, V * u_r, c=colors[i], label=false, ls=:dash)
 end
 title!(&quot;Truth and weak greedy solutions&quot;)</code></pre><p><img src="rbm_tut7.svg" alt/></p><h3 id="Comparison-of-the-methods"><a class="docs-heading-anchor" href="#Comparison-of-the-methods">Comparison of the methods</a><a id="Comparison-of-the-methods-1"></a><a class="docs-heading-anchor-permalink" href="#Comparison-of-the-methods" title="Permalink"></a></h3><p>The following method produces all full-order solutions, and then computes errors associated with the weak greedy, strong greedy, and POD/PCA algorithms.</p><pre><code class="language-julia hljs">data = greedy_rb_err_data(params, Ais, makeθAi, bis, makeθbi, scm, 50, noise=0)</code></pre><p>First, we wish to plot the error decay of projecting solutions onto the POD/PCA space, and of forming a Galerkin procedure for POD/PCA:</p><pre><code class="language-julia hljs">plt = plot(data[:basis_dim], data[:pca_proj], label=&quot;pod/pca proj&quot;, yaxis=:log, xlabel=&quot;r&quot;, ylabel=&quot;error&quot;)
@@ -201,4 +201,4 @@ for i in 1:P
     p = params[i]
     u = makeA(p) \ makeb(p)
     S[:,i] .= u
-end</code></pre><h3 id="References:"><a class="docs-heading-anchor" href="#References:">References:</a><a id="References:-1"></a><a class="docs-heading-anchor-permalink" href="#References:" title="Permalink"></a></h3><ol><li>D.B.P. Huynh, G. Rozza, S. Sen, A.T. Patera. A successive constraint linear optimization method for lower bounds of parametric coercivity and inf–sup stability constants. Comptes Rendus Mathematique. Volume 345, Issue 8. 2007. Pages 473-478. https://doi.org/10.1016/j.crma.2007.09.019.</li><li>Quarteroni, Alfio, Andrea Manzoni, and Federico Negri. Reduced Basis Methods for Partial Differential Equations. Vol. 92. UNITEXT. Cham: Springer International Publishing, 2016. http://link.springer.com/10.1007/978-3-319-15431-2.</li></ol></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="test_prob.html">« Test Problem</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.3.0 on <span class="colophon-date" title="Friday 29 March 2024 03:55">Friday 29 March 2024</span>. Using Julia version 1.10.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end</code></pre><h3 id="References:"><a class="docs-heading-anchor" href="#References:">References:</a><a id="References:-1"></a><a class="docs-heading-anchor-permalink" href="#References:" title="Permalink"></a></h3><ol><li>D.B.P. Huynh, G. Rozza, S. Sen, A.T. Patera. A successive constraint linear optimization method for lower bounds of parametric coercivity and inf–sup stability constants. Comptes Rendus Mathematique. Volume 345, Issue 8. 2007. Pages 473-478. https://doi.org/10.1016/j.crma.2007.09.019.</li><li>Quarteroni, Alfio, Andrea Manzoni, and Federico Negri. Reduced Basis Methods for Partial Differential Equations. Vol. 92. UNITEXT. Cham: Springer International Publishing, 2016. http://link.springer.com/10.1007/978-3-319-15431-2.</li></ol></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="test_prob.html">« Test Problem</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.3.0 on <span class="colophon-date" title="Monday 8 April 2024 16:15">Monday 8 April 2024</span>. Using Julia version 1.10.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
