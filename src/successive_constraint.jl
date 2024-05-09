@@ -1,4 +1,3 @@
-const MAX_ITER = 10000
 const LP_MAX_VAL = 1e6
 
 """
@@ -66,7 +65,7 @@ function (scm_init::SCM_Init)(p::AbstractVector; noise=0)
 end
 
 """
-`initialize_SCM_SPD(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[T=Float64,kmaxiter=1000,noise=1]) = SCM_Init`
+`initialize_SCM_SPD(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[T=Float64,optimizer=Tulip.Optimizer,kmaxiter=1000,noise=1,lp_attrs]) = SCM_Init`
 
 Method to initialize an `SCM_Init` object to perform the SCM
 on an affinely-parameter-dependent symmetric positive definite matrix
@@ -103,11 +102,8 @@ defaulting to full-dense eigensolve.
 `noise`: Determines amount of printed information, between 0 and 2 with 0 being nothing
 displayed; default 1.
 
-`lp_itr_limit`: Determines the maximum number of iterations allowed for the linear
-program solver; default 1000000.
-
-`lp_itr_limit`: Determines the maximum amount of time allowed for the linear
-program solver; default 5.0.
+`lp_attrs`: A dicitonary of attributes to set for the linear program with the given
+optimizer.
 """
 function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
                             Ais::AbstractVector,
@@ -195,7 +191,7 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
 end
 
 """
-`initialize_SCM_Noncoercive(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[T=Float64,kmaxiter=1000,noise=1]) = SCM_Init`
+`initialize_SCM_Noncoercive(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[T=Float64,optimizer=Tulip.Optimizer,kmaxiter=1000,noise=1,lp_attrs]) = SCM_Init`
 
 Method to initialize an `SCM_Init` object to perform the SCM
 on an affinely-parameter-dependent matrix
@@ -232,11 +228,8 @@ defaulting to full-dense eigensolve.
 `noise`: Determines amount of printed information, between 0 and 2 with 0 being nothing
 displayed; default 1.
 
-`lp_itr_limit`: Determines the maximum number of iterations allowed for the linear
-program solver; default 1000000.
-
-`lp_itr_limit`: Determines the maximum amount of time allowed for the linear
-program solver; default 5.0.
+`lp_attrs`: A dicitonary of attributes to set for the linear program with the given
+optimizer.
 """
 function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
                         Ais::AbstractVector,
