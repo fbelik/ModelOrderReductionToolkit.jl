@@ -31,6 +31,7 @@ struct SCM_Init <: Function
     spd::Bool
     R::Float64
     optimizer::Any
+    lp_attrs::Dict
 end
 
 function Base.show(io::Core.IO, scm::SCM_Init)
@@ -65,7 +66,7 @@ function (scm_init::SCM_Init)(p::AbstractVector; noise=0)
 end
 
 """
-`initialize_SCM_SPD(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[T=Float64,optimizer=Tulip.Optimizer,kmaxiter=1000,noise=1]) = SCM_Init`
+`initialize_SCM_SPD(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[T=Float64,kmaxiter=1000,noise=1]) = SCM_Init`
 
 Method to initialize an `SCM_Init` object to perform the SCM
 on an affinely-parameter-dependent symmetric positive definite matrix
@@ -96,14 +97,17 @@ on the parameter discretization (between 0 and 1)
 `T`: Datatype for matrix initialization, default `Float64`. If using 
 complex matrices, pass `T=ComplexF64`.
 
-`optimizer`: Optimizer to pass into JuMP Model method for solving
-linear programs
-
 `kmaxiter`: Maximum number of iterations used in iterating eigensolver before
 defaulting to full-dense eigensolve.
 
 `noise`: Determines amount of printed information, between 0 and 2 with 0 being nothing
-displayed; default 1
+displayed; default 1.
+
+`lp_itr_limit`: Determines the maximum number of iterations allowed for the linear
+program solver; default 1000000.
+
+`lp_itr_limit`: Determines the maximum amount of time allowed for the linear
+program solver; default 5.0.
 """
 function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
                             Ais::AbstractVector,
@@ -114,7 +118,11 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
                             T::Type=Float64,
                             optimizer=Tulip.Optimizer,
                             kmaxiter=1000,
-                            noise::Int=1)
+                            noise::Int=1,
+                            lp_attrs = Dict(
+                                "IPM_IterationsLimit"=>1000000, 
+                                "IPM_TimeLimit"=>1.0)
+                            )
     # Form data tree to search for nearest neighbors
     if typeof(param_disc) <: Vector
         param_disc = reduce(hcat, param_disc)
@@ -179,14 +187,15 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
     σ_LBs = zeros(length(tree.data))
     scm =  SCM_Init(d, QA, tree, tree_lookup, B, C, 
                     C_indices, Mα, Mp, ϵ, J, make_UB, 
-                    Y_UB, σ_UBs, σ_LBs, true, R, optimizer)
+                    Y_UB, σ_UBs, σ_LBs, true, R, optimizer,
+                    lp_attrs)
     # Form upperbound set to ϵ accuracy
     form_upperbound_set!(scm, noise=noise)
     return scm
 end
 
 """
-`initialize_SCM_Noncoercive(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[T=Float64,optimizer=Tulip.Optimizer,kmaxiter=1000,noise=1]) = SCM_Init`
+`initialize_SCM_Noncoercive(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[T=Float64,kmaxiter=1000,noise=1]) = SCM_Init`
 
 Method to initialize an `SCM_Init` object to perform the SCM
 on an affinely-parameter-dependent matrix
@@ -217,14 +226,17 @@ on the parameter discretization (between 0 and 1)
 `T`: Datatype for matrix initialization, default `Float64`. If using 
 complex matrices, pass `T=ComplexF64`.
 
-`optimizer`: Optimizer to pass into JuMP Model method for solving
-linear programs
-
 `kmaxiter`: Maximum number of iterations used in iterating eigensolver before
 defaulting to full-dense eigensolve.
 
 `noise`: Determines amount of printed information, between 0 and 2 with 0 being nothing
-displayed; default 1
+displayed; default 1.
+
+`lp_itr_limit`: Determines the maximum number of iterations allowed for the linear
+program solver; default 1000000.
+
+`lp_itr_limit`: Determines the maximum amount of time allowed for the linear
+program solver; default 5.0.
 """
 function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
                         Ais::AbstractVector,
@@ -235,7 +247,11 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
                         T::Type=Float64,
                         optimizer=Tulip.Optimizer,
                         kmaxiter=1000,
-                        noise::Int=1)
+                        noise::Int=1,
+                        lp_attrs = Dict(
+                            "IPM_IterationsLimit"=>1000000, 
+                            "IPM_TimeLimit"=>1.0)
+                        )
     # Form data tree to search for nearest neighbors
     if typeof(param_disc) <: Vector
         param_disc = reduce(hcat, param_disc)
@@ -313,7 +329,8 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
     σ_LBs = zeros(length(tree.data))
     scm =  SCM_Init(d, QAA, tree, tree_lookup, B, C, 
                     C_indices, Mα, Mp, ϵ, J, make_UB, 
-                    Y_UB, σ_UBs, σ_LBs, false, R, optimizer)
+                    Y_UB, σ_UBs, σ_LBs, false, R,
+                    optimizer, lp_attrs)
     # Form upperbound set to ϵ accuracy
     form_upperbound_set!(scm, noise=noise)
     return scm
@@ -328,10 +345,11 @@ Helper method that takes in an `SCM_Init_SPD` object and a parameter vector
 """
 function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector; noise=1)
     model = Model(scm_init.optimizer)
-    try
-        set_attribute(model, "IPM_IterationsLimit", 1000000)
-        set_attribute(model, "IPM_TimeLimit", 20.0)
-    catch e
+    for (attr,value) in  scm_init.lp_attrs
+        try
+            set_attribute(model, attr, value)
+        catch
+        end
     end
     set_silent(model)
     @variable(model, y[1:scm_init.QA])
@@ -368,13 +386,15 @@ function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector; noise=1)
     optimize!(model)
     if termination_status(model) != OPTIMAL
         if noise >= 1
-            println("Warning: Linear Program Solution not optimal, possibly choose different optimizer")
+            println("Warning: Linear Program Solution not optimal, possibly increase lp_itr_limit or lp_time_limit")
+            println("Setting σ_LB=0")
         end
         σ_LB = 0.0
         y_LB = zeros(scm_init.QA)
     elseif objective_value(model) < 0.0
         if noise >= 2
             println("Warning: Lower bound found to be negative")
+            println("Setting σ_LB=0")
         end
         σ_LB = 0.0
         y_LB = zeros(scm_init.QA)
