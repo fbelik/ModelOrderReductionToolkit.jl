@@ -14,31 +14,28 @@ Given a new parameter vector, `p`, and an object
 `greedy_sol::Greedy_RB_Affine_Linear`, form the reduced
 basis solution with `greedy_sol(p[, full=true])`. 
 """
-struct Greedy_RB_Affine_Linear
+struct Greedy_RB_Affine_Linear{T}
     approx_stability_factor::Function
     compute_res_norm::Function
     update_res_norm!::Function
-    Ais::AbstractVector
-    makeθAi::Function
-    bis::AbstractVector
-    makeθbi::Function
+    Ap::APArray
+    bp::APArray
     params_greedy::AbstractVector
-    V::Vector{Vector}
-    VtAVis::Vector{Vector{Vector}}
-    Vtbis::Vector{Vector}
-    A_alloc::Matrix # Preallocated
-    b_alloc::Vector
-    ualloc::Vector
+    V::VectorOfVectors{T}
+    VtAVp::APArray
+    Vtbp::APArray
+    A_alloc::AbstractMatrix{T} # Preallocated
+    b_alloc::Vector{T}
+    ualloc::Vector{T}
     maxerrs::Vector{Float64}
     trutherrs::Vector{Float64}
-    T::Type
 end
 
 function Base.show(io::Core.IO, greedy_sol::Greedy_RB_Affine_Linear)
     res = "Initialized reduced basis method for parametrized problem A(p) x = b(p) with affine parameter dependence:\n"
     res *= "    A(p) = ∑ makeθAi(p,i) Ais[i],\n"
     res *= "    b(p) = ∑ makeθbi(p,i) bis[i].\n"
-    res *= "Galerkin projection is used onto an $(length(greedy_sol.V)) dimensional space:\n"
+    res *= "Galerkin projection is used onto an $(size(greedy_sol.V,2)) dimensional space:\n"
     res *= "    V' A(p) V u_r = V' b(p),\n"
     res *= "    V u_r ≈ u = A(p)^(-1) b(p)."
     print(io, res)
@@ -53,48 +50,30 @@ the shortened vector `(V' A(p))^(-1) V' b(p)`.
 
 If `truth=true`, then forms the truth solution `A(p)^(-1) b(p)`.
 """
-function (greedy_sol::Greedy_RB_Affine_Linear)(p; full=true, truth=false)
+function (greedy_sol::Greedy_RB_Affine_Linear{T})(p; full=true, truth=false) where T
     if truth
         A = greedy_sol.A_alloc
-        A .= 0
-        for i in eachindex(greedy_sol.Ais)
-            A .+= greedy_sol.makeθAi(p,i) .* greedy_sol.Ais[i]
-        end
+        formArray!(greedy_sol.Ap, A, p)
         b = greedy_sol.b_alloc
-        b .= 0
-        for i in eachindex(greedy_sol.bis)
-            b .+= greedy_sol.makeθbi(p,i) .* greedy_sol.bis[i]
-        end
+        formArray!(greedy_sol.bp, b, p)
         return A \ b
     end
-    r = length(greedy_sol.V)
+    r = size(greedy_sol.V,2)
     if r == 0
         # Basis is empty, solution is zero vector
         if full
-            return zeros(greedy_sol.T, size(greedy_sol.A_alloc,1))
+            return zeros(T, size(greedy_sol.A_alloc,1))
         else
-            return zeros(greedy_sol.T, 0)
+            return zeros(T, 0)
         end
     end
     VtAV_r = view(greedy_sol.A_alloc, 1:r, 1:r)
-    VtAV_r .= 0.0
-    for i in eachindex(greedy_sol.VtAVis)
-        θAi = greedy_sol.makeθAi(p,i)
-        for j in eachindex(greedy_sol.VtAVis[1])
-            VtAV_r[:,j] .+= θAi .* greedy_sol.VtAVis[i][j]
-        end
-    end
+    formArray!(greedy_sol.VtAVp, VtAV_r, p)
     Vtb_r = view(greedy_sol.b_alloc, 1:r)
-    Vtb_r .= 0.0
-    for i in eachindex(greedy_sol.Vtbis)
-        Vtb_r .+= greedy_sol.makeθbi(p,i) .* greedy_sol.Vtbis[i]
-    end
+    formArray!(greedy_sol.Vtbp, Vtb_r, p)
     u_r = VtAV_r \ Vtb_r
     if full
-        u_approx = zeros(eltype(u_r),length(greedy_sol.V[1]))
-        for i in eachindex(u_r)
-            u_approx .+= u_r[i] * greedy_sol.V[i]
-        end
+        u_approx = greedy_sol.V * u_r
         return u_approx
     end
     return u_r
@@ -109,24 +88,30 @@ of reduced basis solutions for the problem `A(p)x(p)=b(p)` with affinely
 dependent matrix `A(p) = ∑ makeθAi(p,i) Ais[i]` and vector
 `b(p) = ∑ makeθbi(p,i) bis[i]`. Must pass in type `T`.
 """
-function init_affine_rbm(Ais::AbstractVector, bis::AbstractVector, T::Type)
+function init_affine_rbm(Ap::APArray, 
+                         bp::APArray,
+                         T::Type)
+    Ais = Ap.arrays
+    bis = bp.arrays
     # Preallocate vectors and matrices
     A_alloc = all(issparse.(Ais)) ? spzeros(T,size(Ais[1])) : zeros(T,size(Ais[1]))
     b_alloc = zeros(T,length(bis[1]))
     ualloc = zeros(T,length(bis[1]))
     # Form Galerkin projection matrices
-    V = Vector{T}[]
-    VtAVis = Vector{Vector{T}}[]
+    V = VectorOfVectors(size(Ais[1],1),0,T)
+    VtAVis = VectorOfVectors{T}[]
     for _ in Ais
-        VtAVi = Vector{T}[]#T[]]
+        VtAVi = VectorOfVectors(0,0,T)
         push!(VtAVis, VtAVi)
     end
+    VtAVp = APArray(VtAVis, Ap.makeθi)
     Vtbis = Vector{T}[]
     for _ in bis
         push!(Vtbis, T[])
     end
+    Vtbp = APArray(Vtbis, bp.makeθi)
     ps_greedy = []
-    return (A_alloc, b_alloc, ualloc, V, VtAVis, Vtbis, ps_greedy)
+    return (A_alloc, b_alloc, ualloc, V, VtAVp, Vtbp, ps_greedy)
 end
 
 """
@@ -136,25 +121,27 @@ Given a `Greedy_RB_Affine_Linear` object, `greedy_sol`, and a new
 vector `x`, update the vectors and matrices in `greedy_sol`.
 """
 function append_affine_rbm!(greedy_sol::Greedy_RB_Affine_Linear, x::AbstractVector; noise=1)
-    for i in eachindex(greedy_sol.Ais)
-        # Add to each row of VtAVis[i]
-        for k in eachindex(greedy_sol.V)
-            newrowval = x' * greedy_sol.Ais[i] * greedy_sol.V[k]
-            push!(greedy_sol.VtAVis[i][k], newrowval)
+    Ais = greedy_sol.Ap.arrays
+    bis = greedy_sol.bp.arrays
+    for i in eachindex(Ais)
+        VtAVi = greedy_sol.VtAVp.arrays[i]
+        nrows,ncols = size(VtAVi)
+        # Add row to VtAVis[i]
+        addRow!(VtAVi)
+        if ncols > 0
+            VtAVi[end:end,:] .= (x' * Ais[i]) * greedy_sol.V 
         end
-        newcol = zeros(greedy_sol.T,length(greedy_sol.V)+1)
-        # Add to new column
-        for k in eachindex(greedy_sol.V)
-            newcol[k] = greedy_sol.V[k]' * greedy_sol.Ais[i] * x
+        addCol!(VtAVi)        # Add to new column
+        if nrows > 0
+            VtAVi[1:end-1,end:end] .= greedy_sol.V' * (Ais[i] * x)
         end
-        newcol[end] = x' * greedy_sol.Ais[i] * x
-        push!(greedy_sol.VtAVis[i], newcol)
+        VtAVi[end,end] = x' * Ais[i] * x
     end
-    for i in eachindex(greedy_sol.bis)
-        Vtbis_end = x' * greedy_sol.bis[i]
-        push!(greedy_sol.Vtbis[i], Vtbis_end)
+    for i in eachindex(bis)
+        Vtbis_end = x' * bis[i]
+        push!(greedy_sol.Vtbp.arrays[i], Vtbis_end)
     end
-    push!(greedy_sol.V, x)
+    addCol!(greedy_sol.V, x)
 end
 
 # TODO add docstring
@@ -191,10 +178,11 @@ function add_param_greedily!(greedy_method::Greedy_RB_Affine_Linear, params::Vec
     # Compute full solution to add to V
     u = greedy_method(maxp, truth=true)
     u_r = greedy_method(maxp, full=false)
-    # Form approximate solution without allocating
-    greedy_method.ualloc .= 0
-    for (i,v) in enumerate(greedy_method.V)
-        greedy_method.ualloc .+= u_r[i] .* v
+    # Form approximate solution
+    if k == 1
+        greedy_method.ualloc .= 0
+    else
+        greedy_method.ualloc .= greedy_method.V * u_r
     end
     trueerr = norm(u .- greedy_method.ualloc)
     push!(greedy_method.trutherrs, trueerr)
@@ -214,14 +202,12 @@ function add_param_greedily!(greedy_method::Greedy_RB_Affine_Linear, params::Vec
 end
 
 """
-`GreedyRBAffineLinear(param_disc, Ais, makeθAi, bis, makeθbi, approx_stability_factor, compute_res_norm, update_res_norm![, ϵ=1e-2; T=Float64, max_snapshots=-1, noise=1])`
+`GreedyRBAffineLinear(param_disc, Ap, bp, approx_stability_factor, compute_res_norm, update_res_norm![, ϵ=1e-2; T=Float64, max_snapshots=-1, noise=1])`
 
-Constructs a `Greedy_RB_Affine_Linear` object for parametrized problem `A(p) u(p) = b(p)` with affine parameter
-dependence:
-`A(p) = ∑ makeθAi(p,i) Ais[i]`, and
-`b(p) = ∑ makeθbi(p,i) bis[i]`.
+Constructs a `Greedy_RB_Affine_Linear` object for parametrized problem `Ap(p) u(p) = bp(p)` with affine parameter
+dependence given by APArrays `Ap` (matrix) and `bp` (vector)
 
-`param_disc` must either be a matrix with columns as parameters, or a vector of parameter vectors.
+`param_disc` must either be a matrix with columns as parameters, or a vector of parameters.
 Uses the function `approx_stability_factor(p)` to approximate the stability factor for each parameter in the discretization,
 and `compute_res_norm(u_r,p)` to approximate the norm of the residual. Utilizes the affine decomposition of `A(p)` 
 and `b(p)` to compute upper-bounds for the error:
@@ -237,10 +223,8 @@ Specify `T` if wish to use number type other than `Float64`, works for `ComplexF
 `noise` determines amount of printed output, `0` for no output, `1` for basic, and `2` for more.
 """
 function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVector},
-                              Ais::AbstractVector,
-                              makeθAi::Function,
-                              bis::AbstractVector,
-                              makeθbi::Function,
+                              Ap::APArray,
+                              bp::APArray,
                               approx_stability_factor::Function,
                               compute_res_norm::Function,
                               update_res_norm!::Function,
@@ -260,9 +244,9 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
         end
         print("\n----------\n")
     end
-    A_alloc, b_alloc, ualloc, V, VtAVis, Vtbis, ps_greedy = init_affine_rbm(Ais, bis, T)
+    A_alloc, b_alloc, ualloc, V, VtAVp, Vtbp, ps_greedy = init_affine_rbm(Ap, bp, T)
     if max_snapshots == -1
-        max_snapshots = size(Ais[1],1)
+        max_snapshots = size(Ap.arrays[1],1)
     end
     # Form error vectors 
     maxerrs = Float64[]
@@ -272,10 +256,9 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
     end
     # Form greedy method object
     greedy_method = Greedy_RB_Affine_Linear(approx_stability_factor, compute_res_norm,
-                                            update_res_norm!, Ais, makeθAi, 
-                                            bis, makeθbi, ps_greedy, V, VtAVis, 
-                                            Vtbis, A_alloc, b_alloc, ualloc,
-                                            maxerrs, trutherrs, T)
+                                            update_res_norm!, Ap, bp, ps_greedy, V, 
+                                            VtAVp, Vtbp, A_alloc, b_alloc, ualloc,
+                                            maxerrs, trutherrs)
     # Greedily loop over every parameter value
     for k in 1:max_snapshots
         hit_eps = add_param_greedily!(greedy_method, params, ϵ, noise=noise)
@@ -290,13 +273,31 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
     return greedy_method
 end
 
-"""
-`GreedyRBAffineLinear(param_disc, Ais, makeθAi, bis, makeθbi, approx_stability_factor[, ϵ=1e-2; res_calc=2, T=Float64, max_snapshots=-1, noise=1])`
+# Deprecated for call with APArray objects
+function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVector},
+                              Ais::AbstractVector,
+                              makeθAi::Function,
+                              bis::AbstractVector,
+                              makeθbi::Function,
+                              approx_stability_factor::Function,
+                              compute_res_norm::Function,
+                              update_res_norm!::Function,
+                              ϵ=1e-2;
+                              T::Type=Float64,
+                              max_snapshots=-1,
+                              noise=1)
+    Ap = APArray(Ais, makeθAi)
+    bp = APArray(bis, makeθbi)
+    return GreedyRBAffineLinear(param_disc, Ap, bp, approx_stability_factor, 
+                                compute_res_norm, update_res_norm!, ϵ, T=T, 
+                                max_snapshots=max_snapshots, noise=noise)
+end
 
-Constructs a `Greedy_RB_Affine_Linear` object for parametrized problem `A(p) u(p) = b(p)` with affine parameter
-dependence:
-`A(p) = ∑ makeθAi(p,i) Ais[i]`, and
-`b(p) = ∑ makeθbi(p,i) bis[i]`.
+"""
+`GreedyRBAffineLinear(param_disc, Ap, bp, approx_stability_factor[, ϵ=1e-2; res_calc=2, T=Float64, max_snapshots=-1, noise=1])`
+
+Constructs a `Greedy_RB_Affine_Linear` object for parametrized problem `Ap(p) u(p) = bp(p)` with affine parameter
+dependence given by APArrays `Ap` (matrix) and `bp` (vector).
 
 `param_disc` must either be a matrix with columns as parameters, or a vector of parameter vectors.
 
@@ -320,6 +321,63 @@ Specify `T` if wish to use number type other than `Float64`, works for `ComplexF
 `noise` determines amount of printed output, `0` for no output, `1` for basic, and `2` for more.
 """
 function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVector},
+                              Ap::APArray,
+                              bp::APArray,
+                              approx_stability_factor::Function,
+                              ϵ=1e-2;
+                              res_calc::Int=2,
+                              T::Type=Float64,
+                              max_snapshots=-1,
+                              noise=1)
+    Ais = Ap.arrays
+    makeθAi = Ap.makeθi
+    bis = bp.arrays
+    makeθbi = bp.makeθi
+    # Create compute_res_norm(u_r,p) and update_res_norm!(v) methods
+    if res_calc==0
+        ualloc1 = zeros(T, size(Ais[1],1))
+        ualloc2 = zeros(T, size(Ais[1],1))
+        V = VectorOfVectors(size(Ais[1],1), 0, T)
+        AiVjs = VectorOfVectors{T}[]
+        for i in eachindex(Ais)
+            AiVj = VectorOfVectors(Ais[i] * V)
+            push!(AiVjs, AiVj)
+        end
+        compute_res_norm = (u_r,p) -> begin 
+            # Form A V u_r
+            ualloc1 .= 0
+            for i in eachindex(Ais)
+                ualloc1 .+= makeθAi(p,i) .* AiVjs[i] * u_r 
+            end
+            # Form b
+            formArray!(bp, ualloc2, p)
+            ualloc2 .-= ualloc1 # b - A V u_r
+            return sqrt(real(dot(ualloc2,ualloc2)))
+        end
+        update_res_norm! = (v) -> begin 
+            addCol!(V, v)
+            for i in eachindex(Ais)
+                addCol!(AiVjs[i], Ais[i] * v)
+            end
+        end
+    elseif res_calc == 1
+        # Initialize res_init to compute residual norm
+        V = VectorOfVectors(size(Ais[1],1), 0, T)
+        res_init = residual_norm_affine_init(Ap, bp, V)
+        compute_res_norm = (u_r, p) -> residual_norm_affine_online(res_init,u_r,p)
+        update_res_norm! = (v) -> add_col_to_V!(res_init, v)
+    else
+        # Initialize res_init to compute residual norm
+        V = VectorOfVectors(size(Ais[1],1), 0, T)
+        res_init = residual_norm_affine_proj_init(Ap, bp, V)
+        compute_res_norm = (u_r, p) -> residual_norm_affine_online(res_init,u_r,p)
+        update_res_norm! = (v) -> add_col_to_V!(res_init, v)
+    end
+    return GreedyRBAffineLinear(param_disc, Ais, makeθAi, bis, makeθbi, approx_stability_factor, compute_res_norm, update_res_norm!, ϵ, T=T, max_snapshots=max_snapshots, noise=noise)
+end
+
+# Deprecated for call with APArray objects
+function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVector},
                               Ais::AbstractVector,
                               makeθAi::Function,
                               bis::AbstractVector,
@@ -330,62 +388,17 @@ function GreedyRBAffineLinear(param_disc::Union{<:AbstractMatrix,<:AbstractVecto
                               T::Type=Float64,
                               max_snapshots=-1,
                               noise=1)
-    # Create compute_res_norm(u_r,p) and update_res_norm!(v) methods
-    if res_calc==0
-        ualloc1 = zeros(T, size(Ais[1],1))
-        ualloc2 = zeros(T, size(Ais[1],1))
-        V = Vector{T}[]
-        AiVjs = Vector{Vector{T}}[]
-        for i in eachindex(Ais)
-            AiVj = Vector{T}[]
-            for j in eachindex(V)
-                push!(AiVj, Ais[i] * V[j])
-            end
-            push!(AiVjs, AiVj)
-        end
-        compute_res_norm = (u_r,p) -> begin 
-            # Form A V u_r
-            ualloc1 .= 0
-            for i in eachindex(Ais)
-                for j in eachindex(V)
-                    ualloc1 .+= makeθAi(p,i) .* u_r[j] .* AiVjs[i][j]
-                end
-            end
-            # Form b
-            ualloc2 .= 0
-            for i in eachindex(bis)
-                ualloc2 .+= makeθbi(p,i) .* bis[i]
-            end
-            ualloc2 .-= ualloc1 # b - A V u_r
-            return sqrt(real(dot(ualloc2,ualloc2)))
-        end
-        update_res_norm! = (v) -> begin 
-            push!(V, v)
-            for i in eachindex(Ais)
-                push!(AiVjs[i], Ais[i] * v)
-            end
-        end
-    elseif res_calc == 1
-        # Initialize res_init to compute residual norm
-        res_init = residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, Vector{T}[], T=T)
-        compute_res_norm = (u_r, p) -> residual_norm_affine_online(res_init,u_r,p)
-        update_res_norm! = (v) -> add_col_to_V!(res_init, v)
-    else
-        # Initialize res_init to compute residual norm
-        res_init = residual_norm_affine_proj_init(Ais, makeθAi, bis, makeθbi, Vector{T}[], T=T)
-        compute_res_norm = (u_r, p) -> residual_norm_affine_online(res_init,u_r,p)
-        update_res_norm! = (v) -> add_col_to_V!(res_init, v)
-    end
-    return GreedyRBAffineLinear(param_disc, Ais, makeθAi, bis, makeθbi, approx_stability_factor, compute_res_norm, update_res_norm!, ϵ, T=T, max_snapshots=max_snapshots, noise=noise)
+    Ap = APArray(Ais, makeθAi)
+    bp = APArray(bis, makeθbi)
+    return GreedyRBAffineLinear(param_disc, Ap, bp, approx_stability_factor, ϵ, res_calc=res_calc, 
+                                T=T, max_snapshots=max_snapshots, noise=noise)
 end
 
 """
-`greedy_rb_err_data(param_disc,Ais,makeθAi,bis,makeθbi,approx_stability_factor[,num_snapshots=10,ϵ=1e-2;noise=1)`
+`greedy_rb_err_data(param_disc,Ap,bp,approx_stability_factor[,num_snapshots=10,ϵ=1e-2;noise=1)`
 
-Generates error data for parametrized problem `A(p) u(p) = b(p)` with affine parameter
-dependence:
-`A(p) = ∑ makeθAi(p,i) Ais[i]`, and
-`b(p) = ∑ makeθbi(p,i) bis[i]`.
+Constructs a `Greedy_RB_Affine_Linear` object for parametrized problem `Ap(p) u(p) = bp(p)` with affine parameter
+dependence given by APArrays `Ap` (matrix) and `bp` (vector).
 
 **Note**: This method calls the full order solver on all parameters in `param_disc`, may
 take a long time to run.
@@ -426,15 +439,16 @@ truth solutions onto the PCA/POD reduced basis, uses knowledge of all solutions
 vectors onto the SVD/PCA subspace. See ModelOrderReductionToolkit.pca_projector method.
 """
 function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector},
-                            Ais::AbstractVector,
-                            makeθAi::Function,
-                            bis::AbstractVector,
-                            makeθbi::Function,
+                            Ap::APArray,
+                            bp::APArray,
                             approx_stability_factor::Function,
                             num_snapshots=10;
                             res_calc::Int=2,
                             T::Type=Float64,
                             noise=1)
+    Ais = Ap.arrays
+    bis = bp.arrays
+    
     if param_disc isa AbstractMatrix
         params = eachcol(param_disc)
     else
@@ -454,25 +468,24 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
     )
 
     # Weak greedy algorithm
-    A_alloc, b_alloc, ualloc1, V1, VtAVis1, Vtbis1, ps_greedy = init_affine_rbm(Ais, bis, T)
+    A_alloc, b_alloc, ualloc1, V1, VtAVp1, Vtbp1, ps_greedy = init_affine_rbm(Ap, bp, T)
     ualloc2 = copy(ualloc1)
     # Create compute_res_norm(u_r,p) and update_res_norm!(v) methods
     if res_calc == 0
-        AiVjs = Vector{Vector{T}}[]
+        N = size(Ais[1], 1)
+        ualloc1 = zeros(T, N)
+        ualloc2 = zeros(T, N)
+        V = VectorOfVectors(N, 0, T)
+        AiVjs = VectorOfVectors{T}[]
         for i in eachindex(Ais)
-            AiVj = Vector{T}[]
-            for j in eachindex(V1)
-                push!(AiVj, Ais[i] * V1[j])
-            end
+            AiVj = VectorOfVectors(Ais[i] * V)
             push!(AiVjs, AiVj)
         end
         compute_res_norm = (u_r,p) -> begin 
             # Form A V u_r
             ualloc1 .= 0
             for i in eachindex(Ais)
-                for j in eachindex(V1)
-                    ualloc1 .+= makeθAi(p,i) .* u_r[j] .* AiVjs[i][j]
-                end
+                ualloc1 .+= makeθAi(p,i) .* AiVjs[i] * u_r 
             end
             # Form b
             ualloc2 .= 0
@@ -483,28 +496,29 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
             return sqrt(real(dot(ualloc2,ualloc2)))
         end
         update_res_norm! = (v) -> begin 
-            push!(V1, v)
+            addCol!(V, v)
             for i in eachindex(Ais)
-                push!(AiVjs[i], Ais[i] * v)
+                addCol!(AiVjs[i], Ais[i] * v)
             end
         end
     elseif res_calc == 1
         # Initialize res_init to compute residual norm
-        res_init = residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, V1, T=T)
+        V = VectorOfVectors(size(Ais[1],1), 0, T)
+        res_init = residual_norm_affine_init(Ap, bp, V)
         compute_res_norm = (u_r, p) -> residual_norm_affine_online(res_init,u_r,p)
         update_res_norm! = (v) -> add_col_to_V!(res_init, v)
     else
         # Initialize res_init to compute residual norm
-        res_init = residual_norm_affine_proj_init(Ais, makeθAi, bis, makeθbi, Vector{T}[], T=T)
+        V = VectorOfVectors(size(Ais[1],1), 0, T)
+        res_init = residual_norm_affine_proj_init(Ap, bp, V)
         compute_res_norm = (u_r, p) -> residual_norm_affine_online(res_init,u_r,p)
         update_res_norm! = (v) -> add_col_to_V!(res_init, v)
     end
     # Form greedy method object
     greedy_method = Greedy_RB_Affine_Linear(approx_stability_factor, compute_res_norm,
-                                            update_res_norm!, Ais, makeθAi, 
-                                            bis, makeθbi, ps_greedy, V1, VtAVis1, 
-                                            Vtbis1, A_alloc, b_alloc, ualloc1,
-                                            Float64[], Float64[], T)
+                                            update_res_norm!, Ap, bp, ps_greedy, V1, 
+                                            VtAVp1, Vtbp1, A_alloc, b_alloc, ualloc1,
+                                            Float64[], Float64[])
 
     if noise >= 1
         println("Beginning computation of all truth solutions")
@@ -522,21 +536,19 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
     # Strong greedy algorithm
     qr_proj = qr_projector(truth_sols_mat, num_snapshots)
     ret_data[:qr_projector] = qr_proj
-    _, _, _, V2, VtAVis2, Vtbis2, ps_greedy2 = init_affine_rbm(Ais, bis, T)
+    _, _, _, V2, VtAVp2, Vtbp2, ps_greedy2 = init_affine_rbm(Ap, bp, T)
     strong_greedy = Greedy_RB_Affine_Linear(approx_stability_factor, compute_res_norm,
-                                            update_res_norm!, Ais, makeθAi, 
-                                            bis, makeθbi, ps_greedy2, V2, VtAVis2, 
-                                            Vtbis2, A_alloc, b_alloc, ualloc1,
-                                            Float64[], Float64[], T)
+                                            update_res_norm!, Ap, bp, ps_greedy2, V2, 
+                                            VtAVp2, Vtbp2, A_alloc, b_alloc, ualloc1,
+                                            Float64[], Float64[])
     # POD/PCA
     pca_proj = pca_projector(truth_sols_mat, num_snapshots)
     ret_data[:pca_projector] = pca_proj
-    _, _, _, V3, VtAVis3, Vtbis3, ps_greedy3 = init_affine_rbm(Ais, bis, T)
+    _, _, _, V3, VtAVp3, Vtbp3, ps_greedy3 = init_affine_rbm(Ap, bp, T)
     pca_method = Greedy_RB_Affine_Linear(approx_stability_factor, compute_res_norm,
-                                            update_res_norm!, Ais, makeθAi, 
-                                            bis, makeθbi, ps_greedy3, V3, VtAVis3, 
-                                            Vtbis3, A_alloc, b_alloc, ualloc1,
-                                            Float64[], Float64[], T)
+                                            update_res_norm!, Ap, bp, ps_greedy3, V3, 
+                                            VtAVp3, Vtbp3, A_alloc, b_alloc, ualloc1,
+                                            Float64[], Float64[])
     
     # Greedily loop over every parameter value
     for k in 1:num_snapshots
@@ -602,4 +614,21 @@ function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector}
         end
     end
     return ret_data
+end
+
+# Deprecated for call with APArray objects
+function greedy_rb_err_data(param_disc::Union{<:AbstractMatrix,<:AbstractVector},
+                            Ais::AbstractVector,
+                            makeθAi::Function,
+                            bis::AbstractVector,
+                            makeθbi::Function,
+                            approx_stability_factor::Function,
+                            num_snapshots=10;
+                            res_calc::Int=2,
+                            T::Type=Float64,
+                            noise=1)
+    Ap = APArray(Ais, makeθAi)
+    bp = APArray(bis, makeθbi)
+    return greedy_rb_err_data(param_disc, Ap, bp, approx_stability_factor, num_snapshots, 
+                              res_calc=res_calc, T=T, noise=noise)
 end

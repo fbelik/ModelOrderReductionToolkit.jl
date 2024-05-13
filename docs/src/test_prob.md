@@ -146,9 +146,12 @@ for p1 in range(p_lb,p_ub,21)
         push!(params, [p1,p2])
     end
 end
+# Form affine parameter dependent arrays
+Ap = APArray(Ais, makeθAi)
+bp = APArray(bis, makeθbi)
 # Initialize SCM Object
 Ma = 50; Mp = 15; ϵ_SCM = 1e-2;
-scm = initialize_SCM_SPD(params, Ais, makeθAi, Ma, Mp, ϵ_SCM)
+scm = initialize_SCM_SPD(params, Ap, Ma, Mp, ϵ_SCM)
 ```
 As can be seen in the below example, the method `find_sigma_bounds(scm,p)` returns both an upper-bound and a lower-bound estimate for the stability factor with a relative error on the order of `ϵ_SCM` as long as it is not too far from a parameter value in the discretization, `params`.
 ```@example 1
@@ -162,13 +165,13 @@ scm(randp)
 
 Note that in the case that ``A(p)`` is not SPD, one should instead use the noncoercive method.
 ```julia
-scm = initialize_SCM_Noncoercive(params, Ais, makeθAi, Ma, Mp, ϵ_SCM)
+scm = initialize_SCM_Noncoercive(params, Ap, Ma, Mp, ϵ_SCM)
 ```
 
 With the SCM object initialized, one can call the `GreedyRBAffineLinear` method to greedily generate a reduced basis, ``\{v_i\}_{i=1}^r``, one element at a time, to an ``l^2`` error on the order of ``\epsilon_{greedy}``, see reference 2,
 ```@example 1
 ϵ_greedy = 1e-1  
-greedy_sol = GreedyRBAffineLinear(params, Ais, makeθAi, bis, makeθbi, scm, ϵ_greedy)
+greedy_sol = GreedyRBAffineLinear(params, Ap, bp, scm, ϵ_greedy)
 ```
 ```@example 1
 plt = plot(legend=:topleft)

@@ -152,17 +152,17 @@ end
 """
 `orthonormalize_mgs2!(u, V)`
 
-Given a vector of vectors `V`, and a new vector `u`,
-orthogonalize `u` with respect to `V`, and computes its
+Given a matrix `V`, and a new vector `u`, orthogonalize `u` 
+with respect to the columns of `V`, and computes its
 norm `nu`. If `nu != 0`, divides `u` by `nu` and returns 
 `nu`. If `nu == 0`, then `u` lives in the span of `V`, and
 `0` is returned.
 """
-function orthonormalize_mgs2!(u::AbstractVector,V::AbstractVector{<:AbstractVector})
-    for v in V
+function orthonormalize_mgs2!(u::AbstractVector,V::AbstractMatrix)
+    for v in eachcol(V)
         u .-= dot(v, u) .* v
     end
-    for v in V
+    for v in eachcol(V)
         u .-= dot(v, u) .* v
     end
     nu = norm(u)
