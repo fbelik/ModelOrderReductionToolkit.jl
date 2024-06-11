@@ -9,6 +9,7 @@ makedocs(
         "Test Problem" => "test_prob.md",
         "RBM Tutorial" => "rbm_tutorial.md"
     ],
+    checkdocs = :exports,
     format = Documenter.HTML(prettyurls = false)
 )
 

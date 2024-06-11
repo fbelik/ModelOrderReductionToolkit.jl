@@ -49,11 +49,11 @@ using LinearAlgebra
                 push!(params, [p1,p2])
             end
         end
-        Ais = []
+        Ais = AbstractMatrix[]
         for i in 1:P
             push!(Ais, makeAi(i))
         end
-        bis = []
+        bis = AbstractVector[]
         for i in 1:P+1
             push!(bis, makebi(i))
         end
@@ -104,7 +104,7 @@ using LinearAlgebra
     # Test GreedyRBAffineLinear on different residual computations
     ϵ_greedy = 1e-2
     for i in 0:2
-        greedy_sol = GreedyRBAffineLinear(params, Ais, makeθAi, bis, makeθbi, scm, ϵ_greedy, noise=1)
+        greedy_sol = GreedyRBAffineLinear(params, Ais, makeθAi, bis, makeθbi, scm, ϵ_greedy, noise=1, res_calc=i)
         @test length(greedy_sol.params_greedy) <= 30
     end
     # Test with stability radial basis function

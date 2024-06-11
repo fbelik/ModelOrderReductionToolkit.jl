@@ -12,23 +12,20 @@ having affine parameter dependence, and `V` is
 a matrix with columns defining bases for approximation
 spaces `u ≈ V u_r`.
 """
-mutable struct Affine_Residual_Init
-    cijs::Vector
-    dijs::Vector
-    Eijs::Vector
-    Ais::Vector
-    makeθAi::Function
-    bis::Vector
-    makeθbi::Function
+struct Affine_Residual_Init{T}
+    cijs::Vector{T}
+    dijs::Vector{Vector{T}}
+    Eijs::Vector{VectorOfVectors{T}}
+    Ap::APArray
+    bp::APArray
     QA::Int
     Qb::Int
-    V::Vector
-    T::Type
+    V::VectorOfVectors{T}
     X::Matrix
 end
 
 """
-`residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, V[, X=nothing, T=Float64])`
+`residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, V[, X=nothing])`
 
 Method that constructs the necessary vectors and matrices to
 quickly compute the `X`-norm of the residual, 
@@ -52,16 +49,16 @@ the residual will be computed in the method
 `residual_norm_affine_online`. If `X` remains as `nothing`,
 then will choose it to be the identity matrix to compute the
 2-norm of the residual. (NOT YET IMPLEMENTED)
-
-If using complex numbers, specify `T=ComplexF64`.
 """
-function residual_norm_affine_init(Ais::AbstractVector,
-                                   makeθAi::Function,
-                                   bis::AbstractVector,
-                                   makeθbi::Function,
-                                   V::AbstractVector,
-                                   X::Union{Nothing,Matrix}=nothing;
-                                   T::Type=Float64)
+function residual_norm_affine_init(Ap::APArray,
+                                   bp::APArray,
+                                   V::VectorOfVectors{T},
+                                   X::Union{Nothing,Matrix}=nothing) where T
+    Ais = Ap.arrays
+    makeθAi = Ap.makeθi
+    bis = bp.arrays
+    makeθbi = bp.makeθi
+
     n = length(bis[1])
     QA = length(Ais)
     Qb = length(bis)
@@ -70,8 +67,6 @@ function residual_norm_affine_init(Ais::AbstractVector,
     if !isnothing(X)
         X0 .= X
     end
-    # Form V as a matrix for initialization
-    V_mat = length(V) == 0 ? zeros(T, (size(Ais[1],1),0)) : reduce(hcat, V)
     # Form c_ij = b_i^T X b_j
     cijs = T[]
     for i in 1:Qb
@@ -86,25 +81,22 @@ function residual_norm_affine_init(Ais::AbstractVector,
     dijs = Vector{T}[]
     for Ai in Ais
         for bi in bis
-            dij = V_mat' * Ai' * X0 * bi
+            dij = V' * (Ai' * X0 * bi)
             push!(dijs, dij)
         end
     end
     # Form E_ij = V^T A_i^T X A_j V
     # Store E_ijs as vector of vectors
-    Eijs = Vector{Vector{T}}[]
+    Eijs = VectorOfVectors{T}[]
     for i in 1:QA
-        Eii_mat = V_mat' * Ais[i]' * X0 * Ais[i] * V_mat
-        Eii = eachcol(Eii_mat)#[@view Eii_mat[:,i] for i in 1:size(Eii_mat)[2]]
-        push!(Eijs, Eii)
+        Eii_mat = V' * Ais[i]' * X0 * Ais[i] * V
+        push!(Eijs, VOV(Eii_mat))
         for j in i+1:QA
-            Eij_mat = V_mat' * Ais[i]' * X0 * Ais[j] * V_mat
-            Eij = eachcol(Eij_mat)#[@view Eij_mat[:,i] for i in 1:size(Eij_mat)[2]]
-            push!(Eijs, Eij)
+            Eij_mat = V' * Ais[i]' * X0 * Ais[j] * V
+            push!(Eijs, VOV(Eij_mat))
         end
     end
-    return Affine_Residual_Init(cijs, dijs, Eijs, Ais, makeθAi, 
-                                bis, makeθbi, QA, Qb, V, T, X0)
+    return Affine_Residual_Init{T}(cijs, dijs, Eijs, Ap, bp, QA, Qb, V, X0)
 end
 
 """
@@ -115,10 +107,12 @@ in the `Affine_Residual_Init` object, `res_init`, without
 recomputing all terms.
 """
 function add_col_to_V!(res_init::Affine_Residual_Init, v::Vector)
+    Ais = res_init.Ap.arrays
+    bis = res_init.bp.arrays
     # Add to end of each dij vector
     idx = 1
-    for Ai in res_init.Ais
-        for bi in res_init.bis
+    for Ai in Ais
+        for bi in bis
             dij_end = v' * Ai' * res_init.X * bi
             push!(res_init.dijs[idx], dij_end)
             idx += 1
@@ -126,40 +120,28 @@ function add_col_to_V!(res_init::Affine_Residual_Init, v::Vector)
     end
     # Append to Eij matrices
     idx = 1
-    for i in eachindex(res_init.Ais)
+    for i in 1:res_init.QA
         # Add to each row of V
-        for k in 1:length(res_init.V)
-            newrowval = v' * res_init.Ais[i]' * res_init.X' * res_init.Ais[i] * res_init.V[k]
-            push!(res_init.Eijs[idx][k], newrowval)
-        end
+        addRow!(res_init.Eijs[idx])
+        res_init.Eijs[idx][end:end,:] .= (((v' * Ais[i]') * res_init.X') * Ais[i]) * res_init.V
         # Form new column of V
-        Eij_col = zeros(res_init.T, length(res_init.V)+1)
-        for k in 1:length(res_init.V)
-            newcolval = res_init.V[k]' * res_init.Ais[i]' * res_init.X' * res_init.Ais[i] * v
-            Eij_col[k] = newcolval
-        end
-        Eij_col[end] = v' * res_init.Ais[i]' * res_init.X' * res_init.Ais[i] * v
-        push!(res_init.Eijs[idx], Eij_col)
+        addCol!(res_init.Eijs[idx])
+        res_init.Eijs[idx][1:end-1,end:end] .= ((((v' * Ais[i]') * res_init.X) * Ais[i]) * res_init.V)'
+        res_init.Eijs[idx][end,end] = (((v' * Ais[i]') * res_init.X') * Ais[i]) * v
         idx += 1
-        for j in i+1:length(res_init.Ais)
+        for j in (i+1):res_init.QA
             # Add to each row of V
-            for k in 1:length(res_init.V)
-                newrowval = v' * res_init.Ais[i]' * res_init.X' * res_init.Ais[j] * res_init.V[k]
-                push!(res_init.Eijs[idx][k], newrowval)
-            end
+            addRow!(res_init.Eijs[idx])
+            res_init.Eijs[idx][end:end,:] .= (((v' * Ais[i]') * res_init.X') * Ais[j]) * res_init.V
             # Form new column of V
-            Eij_col = zeros(res_init.T, length(res_init.V)+1)
-            for k in 1:length(res_init.V)
-                newcolval = res_init.V[k]' * res_init.Ais[i]' * res_init.X' * res_init.Ais[j] * v
-                Eij_col[k] = newcolval
-            end
-            Eij_col[end] = v' * res_init.Ais[i]' * res_init.X' * res_init.Ais[j] * v
-            push!(res_init.Eijs[idx], Eij_col)
+            addCol!(res_init.Eijs[idx])
+            res_init.Eijs[idx][1:end-1,end:end] .= ((((v' * Ais[j]') * res_init.X) * Ais[i]) * res_init.V)'
+            res_init.Eijs[idx][end,end] = (((v' * Ais[i]') * res_init.X') * Ais[j]) * v
             idx += 1
         end
     end
-    # Append to V matrix
-    push!(res_init.V, v)
+    # Append column to V
+    addCol!(res_init.V, v)
 end
 
 """
@@ -178,8 +160,8 @@ vector `p`.
 function residual_norm_affine_online(res_init::Affine_Residual_Init,
                                      u_r::AbstractVector,
                                      p::AbstractVector)
-    θbis = [res_init.makeθbi(p,i) for i in 1:res_init.Qb]
-    θAis = [res_init.makeθAi(p,i) for i in 1:res_init.QA]
+    θbis = [res_init.bp.makeθi(p,i) for i in 1:res_init.Qb]
+    θAis = [res_init.Ap.makeθi(p,i) for i in 1:res_init.QA]
     # Sum across cijs
     res = 0.0
     idx = 1
@@ -192,7 +174,7 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init,
             idx += 1
         end
     end
-    if length(res_init.V) > 0
+    if size(res_init.V, 2) > 0
         # Sum across dijs
         cur = 0.0
         idx = 1
@@ -206,17 +188,11 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init,
         # Sum across Eijs
         idx = 1
         for i in 1:res_init.QA
-            cur = 0.0
-            for k in eachindex(u_r)
-                cur += u_r[k] * (u_r' * res_init.Eijs[idx][k])
-            end
+            cur = u_r' * (res_init.Eijs[idx] * u_r)
             res += real(θAis[i] * θAis[i]' * cur)
             idx += 1
             for j in i+1:res_init.QA
-                cur = 0.0
-                for k in eachindex(u_r)
-                    cur += u_r[k] * (u_r' * res_init.Eijs[idx][k])
-                end
+                cur = u_r' * (res_init.Eijs[idx] * u_r)
                 cur *= θAis[i]' * θAis[j] 
                 res += real(cur + cur')
                 idx += 1
@@ -227,7 +203,7 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init,
 end
 
 """
-`Affine_Residual_Init`
+`Affine_Residual_Init_Proj`
 
 A struct for containing the necessary vectors
 and matrices for quickly compute the `X`-norm of the
@@ -240,20 +216,17 @@ having affine parameter dependence, and `V` is
 a matrix with columns defining bases for approximation
 spaces `u ≈ V u_r`.
 """
-struct Affine_Residual_Init_Proj
+struct Affine_Residual_Init_Proj{T}
     F::UpdatableQR
-    qijs::Vector
-    ij_idxs::Vector
-    b_par_ijks::Vector
-    b_perp_idxs::Vector
-    Ais::Vector
-    makeθAi::Function
-    bis::Vector
-    makeθbi::Function
+    qijs::Vector{Vector{Vector{T}}}
+    ij_idxs::Vector{Vector{Int}}
+    b_par_ijks::Vector{Vector{Vector{T}}}
+    b_perp_idxs::Vector{Int}
+    Ap::APArray
+    bp::APArray
     QA::Int
     Qb::Int
-    V::Vector
-    T::Type
+    V::VectorOfVectors{T}
     X::Matrix
 end
 
@@ -286,16 +259,14 @@ the residual will be computed in the method
 `residual_norm_affine_online`. If `X` remains as `nothing`,
 then will choose it to be the identity matrix to compute the
 2-norm of the residual. (NOT YET IMPLEMENTED)
-
-If using complex numbers, specify `T=ComplexF64`.
 """
-function residual_norm_affine_proj_init(Ais::AbstractVector,
-                                        makeθAi::Function,
-                                        bis::AbstractVector,
-                                        makeθbi::Function,
-                                        V::AbstractVector,
-                                        X::Union{Nothing,Matrix}=nothing;
-                                        T::Type=Float64)
+function residual_norm_affine_proj_init(Ap::APArray,
+                                        bp::APArray,
+                                        V::VectorOfVectors{T},
+                                        X::Union{Nothing,Matrix}=nothing) where T
+    Ais = Ap.arrays
+    bis = bp.arrays
+
     n = length(bis[1])
     QA = length(Ais)
     Qb = length(bis)
@@ -313,7 +284,7 @@ function residual_norm_affine_proj_init(Ais::AbstractVector,
         qis = Vector{T}[]
         push!(qijs, qis)
         push!(ij_idxs, zeros(Int, length(V)))
-        for (j,v) in enumerate(V)
+        for (j,v) in enumerate(eachcol(V))
             UpdatableQRFactorizations.add_column!(F, Ai * v)
             qij = zeros(T, F.n)
             qij[F.m] = 1
@@ -344,8 +315,8 @@ function residual_norm_affine_proj_init(Ais::AbstractVector,
             end
         end
     end
-    return Affine_Residual_Init_Proj(F, qijs, ij_idxs, b_par_ijks, b_perp_idxs,
-                                     Ais, makeθAi, bis, makeθbi, QA, Qb, V, T, X0)
+    return Affine_Residual_Init_Proj{T}(F, qijs, ij_idxs, b_par_ijks, b_perp_idxs,
+                                        Ap, bp, QA, Qb, V, X0)
 end
 
 """
@@ -355,16 +326,17 @@ Method to add a vector `v` to the columns of the matrix `V`
 in the `Affine_Residual_Init_Proj` object, `res_init`, without
 recomputing all terms.
 """
-function add_col_to_V!(res_init::Affine_Residual_Init_Proj, v::Vector)
-    QA = length(res_init.Ais)
-    Qb = length(res_init.bis)
-    for i in 1:Qb
+function add_col_to_V!(res_init::Affine_Residual_Init_Proj{T}, v::AbstractVector{T}) where T
+    Ais = res_init.Ap.arrays
+    bis = res_init.bp.arrays
+
+    for _ in 1:res_init.Qb
         UpdatableQRFactorizations.remove_column!(res_init.F)
     end
     # Update vectors of Q
-    for (i,Ai) in enumerate(res_init.Ais)
+    for (i,Ai) in enumerate(Ais)
         UpdatableQRFactorizations.add_column!(res_init.F, Ai * v)
-        qij = zeros(res_init.T, res_init.F.n)
+        qij = zeros(T, res_init.F.n)
         qij[res_init.F.m] = 1
         for m in res_init.F.rot_index:-1:1
             lmul!(res_init.F.rotations_full[m]', qij)
@@ -372,20 +344,20 @@ function add_col_to_V!(res_init::Affine_Residual_Init_Proj, v::Vector)
         push!(res_init.qijs[i], qij)
         push!(res_init.ij_idxs[i], res_init.F.m)
     end
-    push!(res_init.V, v)
+    addCol!(res_init.V, v)
     # Update indices for b_perp
-    res_init.b_perp_idxs .+= QA
+    res_init.b_perp_idxs .+= res_init.QA
     # Update coefficients for b_par
-    for i in 1:QA
-        b_par_ks = zeros(res_init.T,Qb)
+    for i in 1:res_init.QA
+        b_par_ks = zeros(T,res_init.Qb)
         push!(res_init.b_par_ijks[i], b_par_ks)
-        for k in 1:Qb
-            b_par_ks[k] = res_init.qijs[i][end]' * res_init.bis[k]
+        for k in 1:res_init.Qb
+            b_par_ks[k] = res_init.qijs[i][end]' * bis[k]
         end
     end
-    for i in 1:Qb
+    for i in 1:res_init.Qb
         # Add bis to QR
-        UpdatableQRFactorizations.add_column!(res_init.F, res_init.bis[i])
+        UpdatableQRFactorizations.add_column!(res_init.F, bis[i])
         res_init.b_perp_idxs[i] = res_init.F.m
     end
 end
@@ -407,22 +379,22 @@ Pass as input the `Affine_Residual_Init` object, `res_init`,
 a reduced vector `u_r`, and the corresponding parameter
 vector `p`.
 """
-function residual_norm_affine_online(res_init::Affine_Residual_Init_Proj,
-                                     u_r::AbstractVector,
-                                     p::AbstractVector)
-    θbis = [res_init.makeθbi(p,i) for i in 1:res_init.Qb]
-    θAis = [res_init.makeθAi(p,i) for i in 1:res_init.QA]
+function residual_norm_affine_online(res_init::Affine_Residual_Init_Proj{T},
+                                     u_r::AbstractVector{T},
+                                     p) where T
+    θbis = [res_init.bp.makeθi(p,i) for i in 1:res_init.Qb]
+    θAis = [res_init.Ap.makeθi(p,i) for i in 1:res_init.QA]
     # Compute ||b_par(p) - A(p) V u_r||
     res = 0.0
-    for i in eachindex(res_init.Ais)
-        for j in eachindex(res_init.V)
+    for i in 1:res_init.QA
+        for j in eachindex(eachcol(res_init.V))
             cur = 0.0
-            for k in eachindex(res_init.bis)
+            for k in 1:res_init.Qb
                 cur += θbis[k] * res_init.b_par_ijks[i][j][k]
             end
             R_row = res_init.ij_idxs[i][j]
-            for k in eachindex(res_init.Ais)
-                for l in eachindex(res_init.V)
+            for k in 1:res_init.QA
+                for l in eachindex(eachcol(res_init.V))
                     R_col = res_init.ij_idxs[k][l]
                     cur -= θAis[k] * u_r[l] * res_init.F.R_full[R_row,R_col]
                 end
@@ -431,10 +403,10 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init_Proj,
         end
     end
     # Compute ||b_perp(p)||
-    for i in eachindex(res_init.bis)
+    for i in 1:res_init.Qb
         cur = 0.0
         row = res_init.b_perp_idxs[i]
-        for j in i:length(res_init.bis)
+        for j in i:res_init.Qb
             col = res_init.b_perp_idxs[j]
             cur += (θbis[j] * res_init.F.R_full[row,col])
         end
