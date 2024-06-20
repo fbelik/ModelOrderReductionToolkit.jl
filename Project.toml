@@ -1,7 +1,7 @@
 name = "ModelOrderReductionToolkit"
 uuid = "3b95acbd-20d2-4f07-8ac8-8df51737bf8b"
 authors = ["fbelik <fjbelik@gmail.com> and contributors"]
-version = "1.0.3"
+version = "1.0.4"
 
 [deps]
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
@@ -16,7 +16,7 @@ UpdatableQRFactorizations = "8b110c62-ada2-4dd7-b53a-29f29fe8f7f4"
 
 [compat]
 JuMP = "1.0"
-KrylovKit = "0.7"
+KrylovKit = "0.8"
 LinearAlgebra = "1"
 NearestNeighbors = "0.4.0"
 Printf = "1"
