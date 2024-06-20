@@ -112,7 +112,7 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
                             kmaxiter=1000,
                             noise::Int=1,
                             lp_attrs = Dict(
-                                "IPM_IterationsLimit"=>1000000, 
+                                "IPM_IterationsLimit"=>1000, 
                                 "IPM_TimeLimit"=>5.0)
                             )
     Ais = Ap.arrays
@@ -197,7 +197,7 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
                             kmaxiter=1000,
                             noise::Int=1,
                             lp_attrs = Dict(
-                                "IPM_IterationsLimit"=>1000000, 
+                                "IPM_IterationsLimit"=>1000, 
                                 "IPM_TimeLimit"=>5.0)
                             )
     Ap = APArray(Ais, makeθAi)
@@ -252,7 +252,7 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
                                     kmaxiter=1000,
                                     noise::Int=1,
                                     lp_attrs = Dict(
-                                        "IPM_IterationsLimit"=>1000000, 
+                                        "IPM_IterationsLimit"=>1000, 
                                         "IPM_TimeLimit"=>5.0)
                                     )
     Ais = Ap.arrays
@@ -350,7 +350,7 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
                                     kmaxiter=1000,
                                     noise::Int=1,
                                     lp_attrs = Dict(
-                                        "IPM_IterationsLimit"=>1000000, 
+                                        "IPM_IterationsLimit"=>1000, 
                                         "IPM_TimeLimit"=>5.0)
                                     )
     Ap = APArray(Ais, makeθAi)

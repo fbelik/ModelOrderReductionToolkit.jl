@@ -2,7 +2,7 @@ module ModelOrderReductionToolkit
 using LinearAlgebra
 using Printf
 using SparseArrays
-using Arpack
+using KrylovKit
 using JuMP
 using Tulip
 using NearestNeighbors
