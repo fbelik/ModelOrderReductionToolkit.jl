@@ -66,6 +66,7 @@ function smallest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, krylovsteps=
     mingd_center = 0.0
     for i in 1:size(A)[1]
         newmingd = real(A[i,i]) - (sum(abs.(view(A,i,:))) - abs(A[i,i]))
+        println(newmingd)
         if newmingd < mingd
             mingd = newmingd
             mingd_center = real(A[i,i])
@@ -74,24 +75,19 @@ function smallest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, krylovsteps=
 
     log_tilde(x) = x >= 1 ? log(x) : (x <= -1 ? -log(-x) : 0)
     exp_tilde(x) = x > 0 ? exp(x) : -exp(-x)
-    exprange = exp_tilde.(range(log_tilde(mingd), log_tilde(mingd_center), krylovsteps))
-    for (i,sigma) in enumerate(exprange[1:end-1])
-        shift_invert = (x -> (A - sigma*I) \ x) 
-        res = eigsolve(shift_invert, size(A,1), 1, :LM, eltype(A), ishermitian=true)#, maxiter=kmaxiter, krylovdim=size(A,1))
-        resval = 0.0
-        # Pluck the maximum result (or maximum negative if negative values exist)
-        for val in res[1]
-            if val < 0 && resval >= 0
-                resval = val
-            elseif val < 0 # && resval < 0
-                resval = max(val, resval)
-            elseif resval >= 0 # && val >= 0
-                resval = max(val, resval)
-            end # ignore if resval < 0 && val >= 0
+    exprange = unique(exp_tilde.(range(log_tilde(mingd), log_tilde(mingd_center), krylovsteps)))
+    for sigma in exprange
+        try
+            res = eigs(A, which=:LM, sigma=sigma, nev=1, ritzvec=false, maxiter=kmaxiter)
+            return real(res[1][1])
+        catch e
+            if !isa(e,Arpack.XYAUPD_Exception)
+                # Did not converge
+                error(e)
+            end
         end
-        # Continue to iterate until converged and distance from sigma smaller than next step
-        if res[3].converged >= 1 && (1 / resval) < shifttol
-            return sigma + 1 / resval
+        if noise >= 2
+            @printf("Krylov iteration did not converge with shift-invert σ=%.2e, reducing\n",mingd)
         end
     end
     if noise >= 1
@@ -112,17 +108,20 @@ dense, eigensolve.
 """
 function largest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1)
     # Do not invert
-    @assert ishermitian(A)
-    res = eigsolve(x -> A*x, size(A,1), 1, :LM, eltype(A), ishermitian=true, maxiter=kmaxiter, krylovdim=size(A,1))
-    if res[3].converged >= 1
-        return res[1][1] 
+    try
+        res = eigs(A, which=:LR, nev=1, ritzvec=false, maxiter=kmaxiter)
+        return real(res[1][1])
+    catch e
+        if !isa(e,Arpack.XYAUPD_Exception)
+            error(e)
+        end
+        if noise >= 1
+            println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
+        end
+        # Perform brute eigen
+        res = eigen!(issparse(A) ? collect(A) : A)
+        return maximum(real.(res.values))
     end
-    if noise >= 1
-        println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
-    end
-    # Perform brute eigen
-    res = eigen!(issparse(A) ? collect(A) : A)
-    return maximum(real.(res.values))
 end
 
 """
@@ -136,18 +135,20 @@ eigenvalue, and the second component being the eigenvector.
 """
 function smallest_real_pos_eigpair(A::AbstractMatrix, kmaxiter, noise=1)
     # Try invert around 0
-    invert = (x -> A \ x) 
-    @assert ishermitian(A)
-    res = eigsolve(invert, size(A,1), 1, :LM, eltype(A), ishermitian=true, maxiter=kmaxiter, krylovdim=size(A,1))
-    if res[3].converged >= 1
-        return (1 / res[1][1], res[2][1])
+    try
+        res = eigs(A, which=:LM, sigma=0, nev=1, ritzvec=true, maxiter=kmaxiter)
+        return (real(res[1][1]), view(res[2],:,1))
+    catch e
+        if !isa(e,Arpack.XYAUPD_Exception)
+            error(e)
+        end
+        if noise >= 1
+            println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
+        end
+        # Perform brute eigen
+        res = eigen!(issparse(A) ? collect(A) : A, sortby=real)
+        return (minimum(real.(res.values)), res.vectors[:,1])
     end
-    if noise >= 1
-        println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
-    end
-    # Perform brute eigen
-    res = eigen!(issparse(A) ? collect(A) : A, sortby=real)
-    return (minimum(real.(res.values)), res.vectors[:,1])
 end
 
 """
@@ -158,18 +159,22 @@ value of it by Krylov iteration and inversion around 0. If
 unsuccessful, computes a full, dense svd.
 """
 function smallest_sval(A::AbstractMatrix, kmaxiter, noise=1)
-    invert = (x -> A \ x)
-    invert_adj = (x -> A' \ x) 
-    res = svdsolve((invert, invert_adj), size(A,1), 1, :LR, eltype(A), maxiter=kmaxiter, krylovdim=size(A,1))
-    if res[4].converged >= 1
-        return (1 / res[1][1])
+    AtA = A'A
+    # Try invert around 0
+    try
+        res = eigs(AtA, which=:LM, sigma=0, nev=1, ritzvec=false, maxiter=kmaxiter)
+        return real(res[1][1])
+    catch e
+        if !isa(e,Arpack.XYAUPD_Exception)
+            error(e)
+        end
+        if noise >= 1
+            println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
+        end
+        # Perform brute eigen
+        res = eigen!(issparse(AtA) ? collect(AtA) : AtA, sortby=real)
+        return minimum(real.(res.values))
     end
-    if noise >= 1
-        println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
-    end
-    # Perform brute eigen
-    res = svd(issparse(A) ? collect(A) : A)
-    return res.S[end]
 end
 
 """
