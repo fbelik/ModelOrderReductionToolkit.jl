@@ -65,26 +65,23 @@ function (scm_init::SCM_Init)(p::AbstractVector; noise=0)
 end
 
 """
-`initialize_SCM_SPD(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[T=Float64,optimizer=Tulip.Optimizer,kmaxiter=1000,noise=1,lp_attrs]) = SCM_Init`
+`initialize_SCM_SPD(param_disc,Ap,Mα,Mp,ϵ;[T=Float64,optimizer=Tulip.Optimizer,kmaxiter=1000,noise=1,lp_attrs]) = SCM_Init`
 
 Method to initialize an `SCM_Init` object to perform the SCM
 on an affinely-parameter-dependent symmetric positive definite matrix
-`A(p) = ∑ makeθAi(p,i) Ais[i]` to compute a lower-bound
-approximation to the minimum singular value (or eigenvalue) of `A(p)`.
+`Ap<:APArray` to compute a lower-bound approximation to the minimum 
+singular value (stability factor) of `A(p)`.
 
 If wish to use complex matrices, pass in `T=ComplexF64`, however,
-makeθAi must be real.
+affine coefficients must be real.
 
 Parameters:
 
 `param_disc`: Either a matrix where each column is a parameter
 value in the discretization, or a vector of parameter vectors.
 
-`Ais`: A vector of matrices, of the same dimension, used to construct
-the full matrix `A(p) = ∑ makeθAi(p,i) Ais[i]`
-
-`makeθAi(p,i)`: A function that takes in as input a parameter vector
-and an index such that `A(p) = ∑ makeθAi(p,i) Ais[i]`
+`Ap`: APArray object that stores the affine parameter dependence
+of the matrix `A(p) = ∑ makeθAi(p,i) Ais[i]`
 
 `Mα`: Stability constraint constant (a positive integer)
 
@@ -106,8 +103,7 @@ displayed; default 1.
 optimizer.
 """
 function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
-                            Ais::AbstractVector,
-                            makeθAi::Function,
+                            Ap::APArray,
                             Mα::Int,
                             Mp::Int,
                             ϵ::AbstractFloat;
@@ -116,9 +112,11 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
                             kmaxiter=1000,
                             noise::Int=1,
                             lp_attrs = Dict(
-                                "IPM_IterationsLimit"=>1000000, 
-                                "IPM_TimeLimit"=>1.0)
+                                "IPM_IterationsLimit"=>1000, 
+                                "IPM_TimeLimit"=>5.0)
                             )
+    Ais = Ap.arrays
+    makeθAi = Ap.makeθi
     # Form data tree to search for nearest neighbors
     if typeof(param_disc) <: Vector
         param_disc = reduce(hcat, param_disc)
@@ -169,10 +167,7 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
     C_indices = [1]
     A_UB = zeros(T,size(Ais[1]))
     make_UB(p) = begin
-        A_UB .= 0
-        for i in eachindex(Ais)
-            A_UB .+= makeθAi(p,i) .* Ais[i]
-        end
+        formArray!(Ap, A_UB, p)
         σ, vec = smallest_real_pos_eigpair(A_UB, kmaxiter, noise)
         y = JH(vec)
         return (σ, y)
@@ -190,27 +185,43 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
     return scm
 end
 
+# Deprecated for calling with APArray
+function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
+                            Ais::AbstractVector,
+                            makeθAi::Function,
+                            Mα::Int,
+                            Mp::Int,
+                            ϵ::AbstractFloat;
+                            T::Type=Float64,
+                            optimizer=Tulip.Optimizer,
+                            kmaxiter=1000,
+                            noise::Int=1,
+                            lp_attrs = Dict(
+                                "IPM_IterationsLimit"=>1000, 
+                                "IPM_TimeLimit"=>5.0)
+                            )
+    Ap = APArray(Ais, makeθAi)
+    return initialize_SCM_SPD(param_disc, Ap, Mα, Mp, ϵ, T=T, optimizer=optimizer, kmaxiter=kmaxiter, noise=noise, lp_attrs=lp_attrs)
+end
+
 """
-`initialize_SCM_Noncoercive(param_disc,Ais,makeθAi,Mα,Mp,ϵ;[T=Float64,optimizer=Tulip.Optimizer,kmaxiter=1000,noise=1,lp_attrs]) = SCM_Init`
+`initialize_SCM_Noncoercive(param_disc,Ap,Mα,Mp,ϵ;[T=Float64,optimizer=Tulip.Optimizer,kmaxiter=1000,noise=1,lp_attrs]) = SCM_Init`
 
 Method to initialize an `SCM_Init` object to perform the SCM
 on an affinely-parameter-dependent matrix
 `A(p) = ∑ makeθAi(p,i) Ais[i]` to compute a lower-bound
-approximation to the minimum singular value of `A`.
+approximation to the minimum singular value (stability factor) of `A(p)`.
 
 If wish to use complex matrices, pass in `T=ComplexF64`, however,
-makeθAi must be real.
+affine coefficients must be real.
 
 Parameters:
 
 `param_disc`: Either a matrix where each column is a parameter
 value in the discretization, or a vector of parameter vectors.
 
-`Ais`: A vector of matrices, of the same dimension, used to construct
-the full matrix `A(p) = ∑ makeθAi(p,i) Ais[i]`
-
-`makeθAi(p,i)`: A function that takes in as input a parameter vector
-and an index such that `A(p) = ∑ makeθAi(p,i) Ais[i]`
+`Ap`: `APArray` object to hold information for affine 
+parameter dependence of matrix `A(p)`. 
 
 `Mα`: Stability constraint constant (a positive integer)
 
@@ -232,19 +243,20 @@ displayed; default 1.
 optimizer.
 """
 function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
-                        Ais::AbstractVector,
-                        makeθAi::Function,
-                        Mα::Int,
-                        Mp::Int,
-                        ϵ::AbstractFloat;
-                        T::Type=Float64,
-                        optimizer=Tulip.Optimizer,
-                        kmaxiter=1000,
-                        noise::Int=1,
-                        lp_attrs = Dict(
-                            "IPM_IterationsLimit"=>1000000, 
-                            "IPM_TimeLimit"=>1.0)
-                        )
+                                    Ap::APArray,
+                                    Mα::Int,
+                                    Mp::Int,
+                                    ϵ::AbstractFloat;
+                                    T::Type=Float64,
+                                    optimizer=Tulip.Optimizer,
+                                    kmaxiter=1000,
+                                    noise::Int=1,
+                                    lp_attrs = Dict(
+                                        "IPM_IterationsLimit"=>1000, 
+                                        "IPM_TimeLimit"=>5.0)
+                                    )
+    Ais = Ap.arrays
+    makeθAi = Ap.makeθi
     # Form data tree to search for nearest neighbors
     if typeof(param_disc) <: Vector
         param_disc = reduce(hcat, param_disc)
@@ -306,10 +318,7 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
     C_indices = [1]
     A_UB = zeros(T,size(Ais[1]))
     make_UB(p) = begin
-        A_UB .= 0
-        for i in eachindex(Ais)
-            A_UB .+= makeθAi(p,i) .* Ais[i]
-        end
+        formArray!(Ap, A_UB, p)
         # Compute minimum eigenvalue of A'A
         A_UB .= A_UB' * A_UB
         σ², vec = smallest_real_pos_eigpair(A_UB, kmaxiter, noise)
@@ -329,6 +338,25 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
     return scm
 end
 
+# Deprecated for calling with APArray
+function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
+                                    Ais::AbstractVector,
+                                    makeθAi::Function,
+                                    Mα::Int,
+                                    Mp::Int,
+                                    ϵ::AbstractFloat;
+                                    T::Type=Float64,
+                                    optimizer=Tulip.Optimizer,
+                                    kmaxiter=1000,
+                                    noise::Int=1,
+                                    lp_attrs = Dict(
+                                        "IPM_IterationsLimit"=>1000, 
+                                        "IPM_TimeLimit"=>5.0)
+                                    )
+    Ap = APArray(Ais, makeθAi)
+    return initialize_SCM_Noncoercive(param_disc, Ap, Mα, Mp, ϵ, T=T, optimizer=optimizer, kmaxiter=kmaxiter, noise=noise, lp_attrs=lp_attrs)
+end
+
 """
 `solve_LBs_LP(scm_init, p[; noise=1]) = (σ_LB, y_LB)`
 
@@ -342,6 +370,7 @@ function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector; noise=1)
         try
             set_attribute(model, attr, value)
         catch
+            println("The optimizer $(scm_init.optimizer) does not have an attribute $(attr) to set")
         end
     end
     set_silent(model)

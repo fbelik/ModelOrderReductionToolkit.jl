@@ -36,32 +36,6 @@ function (sigma_min_rbf::Sigma_Min_RBF)(p)
 end
 
 """
-`smallest_sval(A, kmaxiter[, noise=1])`
-
-Given a matrix `A`, attempts to compute the smallest singular
-value of it by Krylov iteration and inversion around 0. If
-unsuccessful, computes a full, dense svd.
-"""
-function smallest_sval(A::AbstractMatrix, kmaxiter, noise=1)
-    AtA = A'A
-    # Try invert around 0
-    try
-        res = eigs(AtA, which=:LM, sigma=0, nev=1, ritzvec=false, maxiter=kmaxiter)
-        return real(res[1][1])
-    catch e
-        if !isa(e,Arpack.XYAUPD_Exception)
-            error(e)
-        end
-        if noise >= 1
-            println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
-        end
-        # Perform brute eigen
-        res = eigen!(issparse(AtA) ? collect(AtA) : AtA, sortby=real)
-        return minimum(real.(res.values))
-    end
-end
-
-"""
 `min_sigma_rbf(params, Ais, makeθAi[, ϕ=gaussian_rbf])`
 
 Method to form a interpolatory radial-basis function

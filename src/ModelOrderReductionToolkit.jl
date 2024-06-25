@@ -10,7 +10,9 @@ using StaticArrays
 using UpdatableQRFactorizations
 include("la_utils.jl")
 include("projections.jl")
+include("ap_arrays.jl")
 include("successive_constraint.jl")
+include("vector_of_vectors.jl")
 include("residual_norm.jl")
 include("greedy_linear_rb.jl")
 include("stability_radial_basis.jl")
@@ -23,6 +25,16 @@ export singular_values_information
 export pca_projector
 export qr_projector
 export eim_projector
+# ap_arrays.jl exports 
+export APArray
+export formArray!
+export eim
+# vector_of_vectors.jl exports
+export VOV
+export addRow!
+export removeRow!
+export addCol!
+export removeCol!
 # greedy_linear_rb.jl exports
 export GreedyRBAffineLinear
 export greedy_rb_err_data

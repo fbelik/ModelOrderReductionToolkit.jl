@@ -294,8 +294,10 @@ where ``\sigma_{min}(A(p))`` is the minimum singular value of ``A(p)``. Note tha
 We now need a method to approximate (a lowerbound of ) ``\sigma_{min}(A(p))``, and then the numerator of the above can be computed explicitly. One way of doing this is through the **successive constraint method** (SCM). This method takes advantage of the affine parameter dependence of ``A(p)``, see source 1. To compute a successive constraint object, taking note that our ``A(p)`` is a positive definite matrix, we use the following code:
 ```@example 1
 using ModelOrderReductionToolkit
+Ap = APArray(Ais, makeθAi) # Form affine parameter-dependent arrays
+bp = APArray(bis, makeθbi)
 Ma = 50; Mp = 15; ϵ_SCM = 1e-2;
-scm = initialize_SCM_SPD(params, Ais, makeθAi, Ma, Mp, ϵ_SCM)
+scm = initialize_SCM_SPD(params, Ap, Ma, Mp, ϵ_SCM)
 ```
 We can then create a lower-bound approximation of the singular value of ``A(p)`` by calling it directly:
 ```@example 1
@@ -305,11 +307,11 @@ With this in place, we have enough to construct the weak greedy RB method. Note 
 ```@example 1
 ϵ_greedy = 1e-1  
 r = 4
-greedy_sol = GreedyRBAffineLinear(params, Ais, makeθAi, bis, makeθbi, scm, ϵ_greedy, max_snapshots=r)
+greedy_sol = GreedyRBAffineLinear(params, Ap, bp, scm, ϵ_greedy, max_snapshots=r)
 ```
-We can access the greedily chosen reduced basis by calling (note that for computational purposes, ``V`` is stored as a vector of vectors instead of a matrix)
+We can access the greedily chosen reduced basis by calling (note that for computational purposes, ``V`` is stored as a VectorOfVectors object).
 ```@example 1
-V = reduce(hcat, greedy_sol.V)
+V = greedy_sol.V
 ```
 We can now visualize these solutions by calling `greedy_sol(p)` on a paramater vector `p`.
 ```@example 1
@@ -330,7 +332,7 @@ savefig(plt, "rbm_tut7.svg"); nothing # hide
 
 The following method produces all full-order solutions, and then computes errors associated with the weak greedy, strong greedy, and POD/PCA algorithms.
 ```@example 1
-data = greedy_rb_err_data(params, Ais, makeθAi, bis, makeθbi, scm, 50, noise=0)
+data = greedy_rb_err_data(params, Ap, bp, scm, 50, noise=0)
 nothing # hide
 ```
 First, we wish to plot the error decay of projecting solutions onto the POD/PCA space, and of forming a Galerkin procedure for POD/PCA:

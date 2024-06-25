@@ -1,5 +1,21 @@
 # ModelOrderReductionToolkit.jl Docstrings
 
+### Affinely parameter-dependent arrays:
+```@docs
+APArray
+formArray!
+eim
+```
+
+### Matrices as vector of vectors:
+```@docs
+VOV
+addRow!
+removeRow!
+addCol!
+removeCol!
+```
+
 ### Projections functionality: 
 ```@docs
 singular_values_information
@@ -23,8 +39,6 @@ ModelOrderReductionToolkit.SCM_Init
 initialize_SCM_SPD
 initialize_SCM_Noncoercive
 find_sigma_bounds
-ModelOrderReductionToolkit.form_upperbound_set!
-ModelOrderReductionToolkit.solve_LBs_LP
 ```
 
 ### Radial-basis interpolatory stability factor

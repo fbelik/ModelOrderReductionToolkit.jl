@@ -60,12 +60,13 @@ most negative (real) eigenvalue. First, uses Krylov iteration
 with a shift-invert procedure with Gershgorin disks, and if 
 not successful, calls a full, dense, eigensolve.
 """
-function smallest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, krylovsteps=10)
+function smallest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, krylovsteps=10, shifttol=1e4)
     # Try invert method per Gershgorin disks
     mingd = 0.0
     mingd_center = 0.0
     for i in 1:size(A)[1]
         newmingd = real(A[i,i]) - (sum(abs.(view(A,i,:))) - abs(A[i,i]))
+        println(newmingd)
         if newmingd < mingd
             mingd = newmingd
             mingd_center = real(A[i,i])
@@ -74,13 +75,14 @@ function smallest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, krylovsteps=
 
     log_tilde(x) = x >= 1 ? log(x) : (x <= -1 ? -log(-x) : 0)
     exp_tilde(x) = x > 0 ? exp(x) : -exp(-x)
-    exprange = exp_tilde.(range(log_tilde(mingd), log_tilde(mingd_center), krylovsteps))
-    for sigma in exprange 
+    exprange = unique(exp_tilde.(range(log_tilde(mingd), log_tilde(mingd_center), krylovsteps)))
+    for sigma in exprange
         try
             res = eigs(A, which=:LM, sigma=sigma, nev=1, ritzvec=false, maxiter=kmaxiter)
             return real(res[1][1])
         catch e
             if !isa(e,Arpack.XYAUPD_Exception)
+                # Did not converge
                 error(e)
             end
         end
@@ -150,19 +152,45 @@ function smallest_real_pos_eigpair(A::AbstractMatrix, kmaxiter, noise=1)
 end
 
 """
+`smallest_sval(A, kmaxiter[, noise=1])`
+
+Given a matrix `A`, attempts to compute the smallest singular
+value of it by Krylov iteration and inversion around 0. If
+unsuccessful, computes a full, dense svd.
+"""
+function smallest_sval(A::AbstractMatrix, kmaxiter, noise=1)
+    AtA = A'A
+    # Try invert around 0
+    try
+        res = eigs(AtA, which=:LM, sigma=0, nev=1, ritzvec=false, maxiter=kmaxiter)
+        return real(res[1][1])
+    catch e
+        if !isa(e,Arpack.XYAUPD_Exception)
+            error(e)
+        end
+        if noise >= 1
+            println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
+        end
+        # Perform brute eigen
+        res = eigen!(issparse(AtA) ? collect(AtA) : AtA, sortby=real)
+        return minimum(real.(res.values))
+    end
+end
+
+"""
 `orthonormalize_mgs2!(u, V)`
 
-Given a vector of vectors `V`, and a new vector `u`,
-orthogonalize `u` with respect to `V`, and computes its
+Given a matrix `V`, and a new vector `u`, orthogonalize `u` 
+with respect to the columns of `V`, and computes its
 norm `nu`. If `nu != 0`, divides `u` by `nu` and returns 
 `nu`. If `nu == 0`, then `u` lives in the span of `V`, and
 `0` is returned.
 """
-function orthonormalize_mgs2!(u::AbstractVector,V::AbstractVector{<:AbstractVector})
-    for v in V
+function orthonormalize_mgs2!(u::AbstractVector,V::AbstractMatrix)
+    for v in eachcol(V)
         u .-= dot(v, u) .* v
     end
-    for v in V
+    for v in eachcol(V)
         u .-= dot(v, u) .* v
     end
     nu = norm(u)
