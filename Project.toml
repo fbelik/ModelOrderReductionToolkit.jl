@@ -15,7 +15,7 @@ Tulip = "6dd1b50a-3aae-11e9-10b5-ef983d2400fa"
 UpdatableQRFactorizations = "8b110c62-ada2-4dd7-b53a-29f29fe8f7f4"
 
 [compat]
-Arpack = "=0.5.3"
+Arpack = "=0.5.3, 0.5"
 JuMP = "1.0"
 LinearAlgebra = "1"
 NearestNeighbors = "0.4.0"
