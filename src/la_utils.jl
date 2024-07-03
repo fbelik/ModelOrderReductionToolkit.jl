@@ -66,7 +66,6 @@ function smallest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, krylovsteps=
     mingd_center = 0.0
     for i in 1:size(A)[1]
         newmingd = real(A[i,i]) - (sum(abs.(view(A,i,:))) - abs(A[i,i]))
-        println(newmingd)
         if newmingd < mingd
             mingd = newmingd
             mingd_center = real(A[i,i])
