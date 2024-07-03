@@ -295,8 +295,6 @@ function residual_norm_affine_proj_init(Ap::APArray,
                 push!(qis, qij)
                 ij_idxs[i][j] = F.m
             else
-                # qij = zeros(T, F.n)
-                # push!(qis, qij)
                 ij_idxs[i][j] = -1
             end
         end
@@ -359,9 +357,6 @@ function add_col_to_V!(res_init::Affine_Residual_Init_Proj{T}, v::AbstractVector
             push!(res_init.qijs[i], qij)
             push!(res_init.ij_idxs[i], res_init.F.m)
         else
-            # qij = zeros(T, res_init.F.n)
-            # push!(res_init.qijs[i], qij)
-            # push!(res_init.ij_idxs[i], -1)
             if res_init.ij_idxs[i][end] != -1
                 push!(res_init.ij_idxs[i], -1)
             end
