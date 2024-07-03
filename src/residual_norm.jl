@@ -285,22 +285,32 @@ function residual_norm_affine_proj_init(Ap::APArray,
         push!(qijs, qis)
         push!(ij_idxs, zeros(Int, length(V)))
         for (j,v) in enumerate(eachcol(V))
-            UpdatableQRFactorizations.add_column!(F, Ai * v)
-            qij = zeros(T, F.n)
-            qij[F.m] = 1
-            for m in F.rot_index:-1:1
-                lmul!(F.rotations_full[m]', qij)
+            if F.m < F.n
+                UpdatableQRFactorizations.add_column!(F, Ai * v)
+                qij = zeros(T, F.n)
+                qij[F.m] = 1
+                for m in F.rot_index:-1:1
+                    lmul!(F.rotations_full[m]', qij)
+                end
+                push!(qis, qij)
+                ij_idxs[i][j] = F.m
+            else
+                # qij = zeros(T, F.n)
+                # push!(qis, qij)
+                ij_idxs[i][j] = -1
             end
-            push!(qis, qij)
-            ij_idxs[i][j] = F.m
         end
     end
     # Store coefficients for b_perp
     b_perp_idxs = zeros(Int, Qb)
     for i in 1:Qb
         # Add bis to QR
-        UpdatableQRFactorizations.add_column!(F, bis[i])
-        b_perp_idxs[i] = F.m
+        if F.m < F.n
+            UpdatableQRFactorizations.add_column!(F, bis[i])
+            b_perp_idxs[i] = F.m
+        else
+            b_perp_idxs[i] = -1
+        end
     end
     # Store coefficients for b_par
     b_par_ijks = Vector{Vector{T}}[]
@@ -308,10 +318,12 @@ function residual_norm_affine_proj_init(Ap::APArray,
         b_par_jks = Vector{T}[]
         push!(b_par_ijks, b_par_jks)
         for j in eachindex(V)
-            b_par_ks = zeros(T,Qb)
-            push!(b_par_jks, b_par_ks)
-            for k in 1:Qb
-                b_par_ks[k] = qijs[i][j]' * bis[k]
+            if (ij_idxs[i][j]) != -1
+                b_par_ks = zeros(T,Qb)
+                push!(b_par_jks, b_par_ks)
+                for k in 1:Qb
+                    b_par_ks[k] = qijs[i][j]' * bis[k]
+                end
             end
         end
     end
@@ -330,35 +342,52 @@ function add_col_to_V!(res_init::Affine_Residual_Init_Proj{T}, v::AbstractVector
     Ais = res_init.Ap.arrays
     bis = res_init.bp.arrays
 
-    for _ in 1:res_init.Qb
-        UpdatableQRFactorizations.remove_column!(res_init.F)
+    for i in 1:res_init.Qb
+        if res_init.b_perp_idxs[i] != -1
+            UpdatableQRFactorizations.remove_column!(res_init.F)
+        end
     end
     # Update vectors of Q
     for (i,Ai) in enumerate(Ais)
-        UpdatableQRFactorizations.add_column!(res_init.F, Ai * v)
-        qij = zeros(T, res_init.F.n)
-        qij[res_init.F.m] = 1
-        for m in res_init.F.rot_index:-1:1
-            lmul!(res_init.F.rotations_full[m]', qij)
+        if res_init.F.m < res_init.F.n
+            UpdatableQRFactorizations.add_column!(res_init.F, Ai * v)
+            qij = zeros(T, res_init.F.n)
+            qij[res_init.F.m] = 1
+            for m in res_init.F.rot_index:-1:1
+                lmul!(res_init.F.rotations_full[m]', qij)
+            end
+            push!(res_init.qijs[i], qij)
+            push!(res_init.ij_idxs[i], res_init.F.m)
+        else
+            # qij = zeros(T, res_init.F.n)
+            # push!(res_init.qijs[i], qij)
+            # push!(res_init.ij_idxs[i], -1)
+            if res_init.ij_idxs[i][end] != -1
+                push!(res_init.ij_idxs[i], -1)
+            end
         end
-        push!(res_init.qijs[i], qij)
-        push!(res_init.ij_idxs[i], res_init.F.m)
     end
     addCol!(res_init.V, v)
     # Update indices for b_perp
     res_init.b_perp_idxs .+= res_init.QA
     # Update coefficients for b_par
     for i in 1:res_init.QA
-        b_par_ks = zeros(T,res_init.Qb)
-        push!(res_init.b_par_ijks[i], b_par_ks)
-        for k in 1:res_init.Qb
-            b_par_ks[k] = res_init.qijs[i][end]' * bis[k]
+        if (res_init.ij_idxs[i][end]) != -1
+            b_par_ks = zeros(T,res_init.Qb)
+            push!(res_init.b_par_ijks[i], b_par_ks)
+            for k in 1:res_init.Qb
+                b_par_ks[k] = res_init.qijs[i][end]' * bis[k]
+            end
         end
     end
     for i in 1:res_init.Qb
         # Add bis to QR
-        UpdatableQRFactorizations.add_column!(res_init.F, bis[i])
-        res_init.b_perp_idxs[i] = res_init.F.m
+        if res_init.F.m < res_init.F.n
+            UpdatableQRFactorizations.add_column!(res_init.F, bis[i])
+            res_init.b_perp_idxs[i] = res_init.F.m
+        else
+            res_init.b_perp_idxs[i] = -1
+        end
     end
 end
 
@@ -388,27 +417,37 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init_Proj{T},
     res = 0.0
     for i in 1:res_init.QA
         for j in eachindex(eachcol(res_init.V))
-            cur = 0.0
-            for k in 1:res_init.Qb
-                cur += θbis[k] * res_init.b_par_ijks[i][j][k]
-            end
-            R_row = res_init.ij_idxs[i][j]
-            for k in 1:res_init.QA
-                for l in eachindex(eachcol(res_init.V))
-                    R_col = res_init.ij_idxs[k][l]
-                    cur -= θAis[k] * u_r[l] * res_init.F.R_full[R_row,R_col]
+            if res_init.ij_idxs[i][min(j, length(res_init.ij_idxs[i]))] != -1 #push!(res_init.ij_idxs[i], -1)
+                cur = 0.0
+                for k in 1:res_init.Qb
+                    cur += θbis[k] * res_init.b_par_ijks[i][j][k]
                 end
+                R_row = res_init.ij_idxs[i][min(j, length(res_init.ij_idxs[i]))]
+                if R_row != -1
+                    for k in 1:res_init.QA
+                        for l in eachindex(eachcol(res_init.V))
+                            R_col = res_init.ij_idxs[k][min(l, length(res_init.ij_idxs[k]))]
+                            if R_col != -1
+                                cur -= θAis[k] * u_r[l] * res_init.F.R_full[R_row,R_col]
+                            end
+                        end
+                    end
+                end
+                res += real(cur' * cur)
             end
-            res += real(cur' * cur)
         end
     end
     # Compute ||b_perp(p)||
     for i in 1:res_init.Qb
         cur = 0.0
         row = res_init.b_perp_idxs[i]
-        for j in i:res_init.Qb
-            col = res_init.b_perp_idxs[j]
-            cur += (θbis[j] * res_init.F.R_full[row,col])
+        if row != -1
+            for j in i:res_init.Qb
+                col = res_init.b_perp_idxs[j]
+                if col != -1
+                    cur += (θbis[j] * res_init.F.R_full[row,col])
+                end
+            end
         end
         res += real(cur' * cur)
     end
