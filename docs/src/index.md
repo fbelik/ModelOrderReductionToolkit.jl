@@ -1,5 +1,29 @@
 # ModelOrderReductionToolkit.jl Docstrings
 
+### Models
+```@docs
+LinearModel
+PoissonModel
+LinearMatrixModel
+LTIModel
+to_frequency_domain
+PenzlModel
+MISOPenzlModel
+ParameterizedPenzlModel
+```
+
+### Reductors
+```@docs
+PODReductor
+SGReductor
+WGReductor
+StabilityResidualErrorEstimator
+form_rom
+lift
+add_to_rb!
+get_rom
+```
+
 ### Affinely parameter-dependent arrays:
 ```@docs
 APArray
@@ -14,23 +38,6 @@ addRow!
 removeRow!
 addCol!
 removeCol!
-```
-
-### Projections functionality: 
-```@docs
-singular_values_information
-pca_projector
-qr_projector
-eim_projector
-```
-
-### Greedy linear affine reduced basis
-```@docs
-ModelOrderReductionToolkit.Greedy_RB_Affine_Linear
-GreedyRBAffineLinear
-ModelOrderReductionToolkit.greedy_rb_err_data
-ModelOrderReductionToolkit.append_affine_rbm!
-ModelOrderReductionToolkit.init_affine_rbm
 ```
 
 ### Successive constraint method (SCM):
@@ -50,12 +57,9 @@ update_sigma_rbf!
 
 ### Computation of norm of residual
 ```@docs
-ModelOrderReductionToolkit.Affine_Residual_Init_Proj
-ModelOrderReductionToolkit.Affine_Residual_Init
-residual_norm_affine_proj_init
-residual_norm_affine_init
-add_col_to_V!
-residual_norm_affine_online
+ModelOrderReductionToolkit.ResidualNormComputer
+ModelOrderReductionToolkit.StandardResidualNormComputer
+ModelOrderReductionToolkit.ProjectionResidualNormComputer
 ```
 
 ### Linear algebra utilities

@@ -35,8 +35,7 @@ APArray = AffineParametrizedArray
 @doc (@doc AffineParametrizedArray) APArray
 
 function Base.show(io::Core.IO, aparr::APArray)
-    res = "Affine parameter dependent array with $(length(aparr.arrays)) terms of the form "
-    res *= "arr(p) = ∑ makeθi(p,i) arrays[i]"
+    res = "$(size(aparr.arrays[1])) affine parameter dependent array with $(length(aparr.arrays)) terms"
     print(io, res)
 end
 
