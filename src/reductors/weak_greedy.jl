@@ -218,7 +218,7 @@ function add_to_rb!(wg_reductor::WGReductor{NOUT}, params::AbstractVector; noise
     push!(wg_reductor.params_greedy[max_i], max_p)
     if max_error < eps
         if noise >= 1
-            @printf("(%d) approximate error = %.4e < ϵ, not adding snapshot to RB\n",k,maxerr)
+            @printf("(%d) approximate error = %.4e < ϵ, not adding snapshot to RB\n",k,max_error)
         end
         return false
     end
