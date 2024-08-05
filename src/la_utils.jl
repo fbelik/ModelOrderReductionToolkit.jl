@@ -1,3 +1,10 @@
+struct FullLU
+    P::AbstractVector
+    Q::AbstractVector
+    L::AbstractMatrix
+    U::AbstractMatrix
+end
+
 """
 `full_lu(A; steps=-1)`
 
@@ -49,7 +56,7 @@ function full_lu(A::AbstractMatrix;steps::Int=-1)
             U[i,:] .= U[i,:] .- L[i,s] .* U[s,:]
         end
     end
-    return (P,L,U,Q)
+    return FullLU(P,L,U,Q)
 end
 
 """
@@ -80,9 +87,13 @@ function smallest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, krylovsteps=
             res = eigs(A, which=:LM, sigma=sigma, nev=1, ritzvec=false, maxiter=kmaxiter)
             return real(res[1][1])
         catch e
-            if !isa(e,Arpack.XYAUPD_Exception)
+            if !(isa(e,Arpack.XYAUPD_Exception) || isa(e, ZeroPivotException))
                 # Did not converge
                 error(e)
+            end
+            if isa(e, ZeroPivotException) && sigma == 0
+                # Zero is the minimum eigenvalue
+                return 0.0
             end
         end
         if noise >= 2
@@ -138,8 +149,12 @@ function smallest_real_pos_eigpair(A::AbstractMatrix, kmaxiter, noise=1)
         res = eigs(A, which=:LM, sigma=0, nev=1, ritzvec=true, maxiter=kmaxiter)
         return (real(res[1][1]), view(res[2],:,1))
     catch e
-        if !isa(e,Arpack.XYAUPD_Exception)
+        if !(isa(e,Arpack.XYAUPD_Exception) || isa(e, ZeroPivotException))
             error(e)
+        end
+        if isa(e, ZeroPivotException) && sigma == 0
+            # Zero is the minimum eigenvalue
+            return (0.0, zeros(eltype(A), size(A, 1)))
         end
         if noise >= 1
             println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
@@ -164,8 +179,13 @@ function smallest_sval(A::AbstractMatrix, kmaxiter, noise=1)
         res = eigs(AtA, which=:LM, sigma=0, nev=1, ritzvec=false, maxiter=kmaxiter)
         return real(res[1][1])
     catch e
-        if !isa(e,Arpack.XYAUPD_Exception)
+        if !(isa(e,Arpack.XYAUPD_Exception) || isa(e, ZeroPivotException))
+            # Did not converge
             error(e)
+        end
+        if isa(e, ZeroPivotException) && sigma == 0
+            # Zero is the minimum eigenvalue
+            return 0.0
         end
         if noise >= 1
             println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")

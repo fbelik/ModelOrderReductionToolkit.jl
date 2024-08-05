@@ -12,6 +12,7 @@ a parameter vector `p` will return the lower-bound estimate
 of the minimum singular value of `A(p)`.
 """
 struct SCM_Init <: Function
+    Ap::APArray
     d::Int
     QA::Int
     tree::NNTree
@@ -34,16 +35,15 @@ struct SCM_Init <: Function
 end
 
 function Base.show(io::Core.IO, scm::SCM_Init)
-    res = "Initialized SCM Object for parametrized"
+    res = ""
     if scm.spd
-        res *= " symmetric\npositive definite "
+        res *= "Coercive "
     else
-        res *= "\n"
+        res *= "Noncoercive "
     end
-    res *= "matrix A(p) = ∑_{i=1}^QA θ_i(p) A_i.\n"
-    res *= @sprintf("\nMα=%d, Mp=%d, ϵ=%.4e.",scm.Mα,scm.Mp,scm.ϵ)
-
+    res = "SCM Object for matrix "
     print(io, res)
+    print(io, scm.Ap)
 end
 
 """
@@ -65,15 +65,12 @@ function (scm_init::SCM_Init)(p::AbstractVector; noise=0)
 end
 
 """
-`initialize_SCM_SPD(param_disc,Ap,Mα,Mp,ϵ;[T=Float64,optimizer=Tulip.Optimizer,kmaxiter=1000,noise=1,lp_attrs]) = SCM_Init`
+`initialize_SCM_SPD(param_disc,Ap,Mα,Mp,ϵ[;optimizer=Tulip.Optimizer,kmaxiter=1000,noise=1,lp_attrs]) = SCM_Init`
 
 Method to initialize an `SCM_Init` object to perform the SCM
 on an affinely-parameter-dependent symmetric positive definite matrix
 `Ap<:APArray` to compute a lower-bound approximation to the minimum 
 singular value (stability factor) of `A(p)`.
-
-If wish to use complex matrices, pass in `T=ComplexF64`, however,
-affine coefficients must be real.
 
 Parameters:
 
@@ -90,9 +87,6 @@ of the matrix `A(p) = ∑ makeθAi(p,i) Ais[i]`
 `ϵ`: Relative difference allowed between upper-bound and lower-bound approximation
 on the parameter discretization (between 0 and 1)
 
-`T`: Datatype for matrix initialization, default `Float64`. If using 
-complex matrices, pass `T=ComplexF64`.
-
 `kmaxiter`: Maximum number of iterations used in iterating eigensolver before
 defaulting to full-dense eigensolve.
 
@@ -107,7 +101,6 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
                             Mα::Int,
                             Mp::Int,
                             ϵ::AbstractFloat;
-                            T::Type=Float64,
                             optimizer=Tulip.Optimizer,
                             kmaxiter=1000,
                             noise::Int=1,
@@ -115,11 +108,22 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
                                 "IPM_IterationsLimit"=>1000, 
                                 "IPM_TimeLimit"=>5.0)
                             )
+    T = typeof(prod(zero.(eltype.(Ap.arrays))))
+    V = VectorOfVectors(size(Ap.arrays[1], 1), 0, T)
     Ais = Ap.arrays
     makeθAi = Ap.makeθi
     # Form data tree to search for nearest neighbors
     if typeof(param_disc) <: Vector
-        param_disc = reduce(hcat, param_disc)
+        eltype_param = eltype(param_disc)
+        try
+            # Check if param eltype has method length
+            length(eltype_param)
+            # Check if param eleltype has method zero
+            eleltype_param = eltype(eltype_param)
+            zero(eltype_param)
+        catch
+            param_disc = reduce(hcat, param_disc)
+        end
     end
     tree = KDTree(param_disc)
     tree_lookup = zeros(Int, length(tree.data))
@@ -176,7 +180,8 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
     Y_UB = [y]
     σ_UBs = [σ]
     σ_LBs = zeros(length(tree.data))
-    scm =  SCM_Init(d, QA, tree, tree_lookup, B, C, 
+    σ_LBs[1] = σ
+    scm =  SCM_Init(Ap, d, QA, tree, tree_lookup, B, C, 
                     C_indices, Mα, Mp, ϵ, J, make_UB, 
                     Y_UB, σ_UBs, σ_LBs, true, R, optimizer,
                     lp_attrs)
@@ -192,7 +197,6 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
                             Mα::Int,
                             Mp::Int,
                             ϵ::AbstractFloat;
-                            T::Type=Float64,
                             optimizer=Tulip.Optimizer,
                             kmaxiter=1000,
                             noise::Int=1,
@@ -201,19 +205,16 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
                                 "IPM_TimeLimit"=>5.0)
                             )
     Ap = APArray(Ais, makeθAi)
-    return initialize_SCM_SPD(param_disc, Ap, Mα, Mp, ϵ, T=T, optimizer=optimizer, kmaxiter=kmaxiter, noise=noise, lp_attrs=lp_attrs)
+    return initialize_SCM_SPD(param_disc, Ap, Mα, Mp, ϵ, optimizer=optimizer, kmaxiter=kmaxiter, noise=noise, lp_attrs=lp_attrs)
 end
 
 """
-`initialize_SCM_Noncoercive(param_disc,Ap,Mα,Mp,ϵ;[T=Float64,optimizer=Tulip.Optimizer,kmaxiter=1000,noise=1,lp_attrs]) = SCM_Init`
+`initialize_SCM_Noncoercive(param_disc,Ap,Mα,Mp,ϵ[;optimizer=Tulip.Optimizer,kmaxiter=1000,noise=1,lp_attrs]) = SCM_Init`
 
 Method to initialize an `SCM_Init` object to perform the SCM
 on an affinely-parameter-dependent matrix
 `A(p) = ∑ makeθAi(p,i) Ais[i]` to compute a lower-bound
 approximation to the minimum singular value (stability factor) of `A(p)`.
-
-If wish to use complex matrices, pass in `T=ComplexF64`, however,
-affine coefficients must be real.
 
 Parameters:
 
@@ -230,9 +231,6 @@ parameter dependence of matrix `A(p)`.
 `ϵ`: Relative difference allowed between upper-bound and lower-bound approximation
 on the parameter discretization (between 0 and 1)
 
-`T`: Datatype for matrix initialization, default `Float64`. If using 
-complex matrices, pass `T=ComplexF64`.
-
 `kmaxiter`: Maximum number of iterations used in iterating eigensolver before
 defaulting to full-dense eigensolve.
 
@@ -247,7 +245,6 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
                                     Mα::Int,
                                     Mp::Int,
                                     ϵ::AbstractFloat;
-                                    T::Type=Float64,
                                     optimizer=Tulip.Optimizer,
                                     kmaxiter=1000,
                                     noise::Int=1,
@@ -255,11 +252,15 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
                                         "IPM_IterationsLimit"=>1000, 
                                         "IPM_TimeLimit"=>5.0)
                                     )
+    T = typeof(prod(zero.(eltype.(Ap.arrays))))
     Ais = Ap.arrays
     makeθAi = Ap.makeθi
     # Form data tree to search for nearest neighbors
     if typeof(param_disc) <: Vector
         param_disc = reduce(hcat, param_disc)
+    end
+    if noise >= 2
+        println("Forming KD Tree for SCM")
     end
     tree = KDTree(param_disc)
     tree_lookup = zeros(Int, length(tree.data))
@@ -272,6 +273,9 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
     QA = length(Ais)
     AiAjs_herm = []
     B = Tuple{Float64,Float64}[]
+    if noise >= 2
+        println("Forming bounding boxes by forming smallest and largest real eigenvalues")
+    end
     for i in 1:QA
         for j in i:QA
             AiAj = Ais[i]' * Ais[j]
@@ -281,6 +285,9 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
             maxeig = largest_real_eigval(AiAj, kmaxiter, noise)
             push!(B, (mineig, maxeig))
         end
+    end
+    if noise >= 2
+        println("Finished forming bounding boxes, forming upperbound set")
     end
     QAA = length(AiAjs_herm)
     # Linear program resizing constant
@@ -329,7 +336,8 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
     Y_UB = [y]
     σ_UBs = [σ²]
     σ_LBs = zeros(length(tree.data))
-    scm =  SCM_Init(d, QAA, tree, tree_lookup, B, C, 
+    σ_LBs[1] = σ²
+    scm =  SCM_Init(Ap, d, QAA, tree, tree_lookup, B, C, 
                     C_indices, Mα, Mp, ϵ, J, make_UB, 
                     Y_UB, σ_UBs, σ_LBs, false, R,
                     optimizer, lp_attrs)
@@ -345,7 +353,6 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
                                     Mα::Int,
                                     Mp::Int,
                                     ϵ::AbstractFloat;
-                                    T::Type=Float64,
                                     optimizer=Tulip.Optimizer,
                                     kmaxiter=1000,
                                     noise::Int=1,
@@ -354,7 +361,7 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
                                         "IPM_TimeLimit"=>5.0)
                                     )
     Ap = APArray(Ais, makeθAi)
-    return initialize_SCM_Noncoercive(param_disc, Ap, Mα, Mp, ϵ, T=T, optimizer=optimizer, kmaxiter=kmaxiter, noise=noise, lp_attrs=lp_attrs)
+    return initialize_SCM_Noncoercive(param_disc, Ap, Mα, Mp, ϵ, optimizer=optimizer, kmaxiter=kmaxiter, noise=noise, lp_attrs=lp_attrs)
 end
 
 """
@@ -365,7 +372,7 @@ Helper method that takes in an `SCM_Init_SPD` object and a parameter vector
 `σ_LB` to the minimum singular value of `A(p)` along with the associated vector `y_LB`.
 """
 function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector; noise=1)
-    model = Model(scm_init.optimizer)
+    model = JuMP.Model(scm_init.optimizer)
     for (attr,value) in  scm_init.lp_attrs
         try
             set_attribute(model, attr, value)
@@ -445,7 +452,7 @@ function form_upperbound_set!(scm_init::SCM_Init; noise::Int=1)
         ϵ_k = -1.0
         σ_UB_k = 0
         σ_LB_k = 0
-        p_k = zeros(scm_init.d)
+        p_k = nothing
         i_k = 0
         # Loop through every point in discretization to find 
         # arg max {p in discretization} (σ_UB(p) - σ_LB(p)) / σ_UB(p)
@@ -470,7 +477,7 @@ function form_upperbound_set!(scm_init::SCM_Init; noise::Int=1)
             end
             ## Compute ϵ_k
             if scm_init.spd
-                ϵ_disc = (σ_UB - σ_LB) / σ_UB
+                ϵ_disc = 1 - σ_LB / σ_UB
             else
                 σ_LB = max(0.0, σ_LB)
                 σ_UB = max(0.0, σ_UB)
@@ -495,6 +502,12 @@ function form_upperbound_set!(scm_init::SCM_Init; noise::Int=1)
                 σ_LB_k = σ_LB
             end
         end
+        if isnothing(p_k)
+            if noise >= 1
+                println("After looping, no optimal parameter found - increase number of parameter values")
+            end
+            return
+        end
         if noise >= 1
             @printf("k = %d, ϵ_k = %.4e, σ_UB_k = %.4f, σ_LB_k = %.4f, p_k = %s\n", 
                     length(scm_init.C), ϵ_k, scm_init.spd ? σ_UB_k : sqrt(σ_UB_k), scm_init.spd ? σ_LB_k : sqrt(σ_LB_k), p_k)
@@ -513,6 +526,7 @@ function form_upperbound_set!(scm_init::SCM_Init; noise::Int=1)
         σ_k, y_k = scm_init.make_UB(p_k)
         push!(scm_init.Y_UB, y_k)
         push!(scm_init.σ_UBs, σ_k)
+        scm_init.σ_LBs[i_k] = σ_k
     end
     if noise >= 1
         println("Warning: Looped through all of parameter discretization without meeting ϵ bound")

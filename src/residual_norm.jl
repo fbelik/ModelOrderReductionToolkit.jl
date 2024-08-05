@@ -1,5 +1,35 @@
 """
-`Affine_Residual_Init`
+`res <: ResidualNormComputer{T}`
+
+Abstract type for computing the norm of the residual
+for weak greedy RB methods. Must implement the
+`update!(res, v)` and `compute(res, u_r, p)` methods.
+"""
+abstract type ResidualNormComputer{T} end
+
+"""
+`update!(res, v)`
+
+Method to add a vector `v` to the ResidualNormComputer
+`res` and update internals.
+"""
+function update!(res::ResidualNormComputer, v::AbstractVector)
+    error("Must implement update!(res,v) for res <: ResidualNormComputer")
+end
+
+"""
+`compute(res, u_r, p)`
+
+Method to compute the residual norm ||b(p) - A(p) V u_r|| for the
+ResidualNormComputer `res`.
+"""
+function compute(res_init::ResidualNormComputer, u_r::AbstractVector, p)
+    error("Must implement compute(res, u_r, p) for res <: ResidualNormComputer")
+end
+
+"""
+`StandardResidualNormComputer{T} <: ResidualNormComputer{T}`
+`StandardResidualNormComputer(Ap::APArray,bp::APArray,V=nothing,X=nothing)`
 
 A struct for containing the necessary vectors
 and matrices for quickly compute the `X`-norm of the
@@ -12,7 +42,7 @@ having affine parameter dependence, and `V` is
 a matrix with columns defining bases for approximation
 spaces `u ≈ V u_r`.
 """
-struct Affine_Residual_Init{T}
+struct StandardResidualNormComputer{T} <: ResidualNormComputer{T}
     cijs::Vector{T}
     dijs::Vector{Vector{T}}
     Eijs::Vector{VectorOfVectors{T}}
@@ -24,36 +54,15 @@ struct Affine_Residual_Init{T}
     X::Matrix
 end
 
-"""
-`residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, V[, X=nothing])`
-
-Method that constructs the necessary vectors and matrices to
-quickly compute the `X`-norm of the residual, 
-`r(u_r,p) = A(p) (u - V u_r) = b(p) - A(p) V u_r`,
-by taking advantage of affine parameter dependence of `A(p)`
-and `b(p)`.
-
-Pass as input a vector of matrices `Ais`, and a function
-`makeθAi` such that the affine construction of `A` is given by
-`A(p) = ∑_{i=1}^QA makeθAi(p,i) * Ais[i]`, and similarly
-a vector of vectors `bis` and a function `makeθbi` such that
-the affine construction of `b` is given by 
-`b(p) = ∑_{i=1}^Qb makeθbi(p,i) * bis[i]`.
-
-Additionally, pass in a matrix `V` which contains as columns
-a basis for a reduced space, `u ≈ V u_r` with the dimension
-of `u_r` less than that of `u`.
-
-Optionally pass in a matrix `X` from which the `X`-norm of
-the residual will be computed in the method
-`residual_norm_affine_online`. If `X` remains as `nothing`,
-then will choose it to be the identity matrix to compute the
-2-norm of the residual. (NOT YET IMPLEMENTED)
-"""
-function residual_norm_affine_init(Ap::APArray,
-                                   bp::APArray,
-                                   V::VectorOfVectors{T},
-                                   X::Union{Nothing,Matrix}=nothing) where T
+function StandardResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorOfVectors,Nothing}=nothing,X::Union{Nothing,Matrix}=nothing)
+    if isnothing(V)
+        T1 = typeof(prod(zero.(eltype.(Ap.arrays))))
+        T2 = typeof(prod(zero.(eltype.(bp.arrays))))
+        T = typeof(zero(T1) * zero(T2))
+        V = VectorOfVectors(size(Ap.arrays[1], 1), 0, T)
+    else
+        T = eltype(V)
+    end
     Ais = Ap.arrays
     makeθAi = Ap.makeθi
     bis = bp.arrays
@@ -96,17 +105,10 @@ function residual_norm_affine_init(Ap::APArray,
             push!(Eijs, VOV(Eij_mat))
         end
     end
-    return Affine_Residual_Init{T}(cijs, dijs, Eijs, Ap, bp, QA, Qb, V, X0)
+    return StandardResidualNormComputer{T}(cijs, dijs, Eijs, Ap, bp, QA, Qb, V, X0)
 end
 
-"""
-`add_col_to_V!(res_init, v)`
-
-Method to add a vector `v` to the columns of the matrix `V`
-in the `Affine_Residual_Init` object, `res_init`, without
-recomputing all terms.
-"""
-function add_col_to_V!(res_init::Affine_Residual_Init, v::Vector)
+function update!(res_init::StandardResidualNormComputer, v::AbstractVector)
     Ais = res_init.Ap.arrays
     bis = res_init.bp.arrays
     # Add to end of each dij vector
@@ -144,22 +146,7 @@ function add_col_to_V!(res_init::Affine_Residual_Init, v::Vector)
     addCol!(res_init.V, v)
 end
 
-"""
-`residual_norm_affine_online(res_init, u_r, p)`
-
-Method that given `res_init`, an `Affine_Residual_Init`
-object, computes the `X`-norm of the residual, 
-`r(u_r,p) = A(p) (u - V u_r) = b(p) - A(p) V u_r`,
-by taking advantage of affine parameter dependence of `A(p)`
-and `b(p)`.
-
-Pass as input the `Affine_Residual_Init` object, `res_init`,
-a reduced vector `u_r`, and the corresponding parameter
-vector `p`.
-"""
-function residual_norm_affine_online(res_init::Affine_Residual_Init,
-                                     u_r::AbstractVector,
-                                     p::AbstractVector)
+function compute(res_init::StandardResidualNormComputer, u_r::AbstractVector, p)
     θbis = [res_init.bp.makeθi(p,i) for i in 1:res_init.Qb]
     θAis = [res_init.Ap.makeθi(p,i) for i in 1:res_init.QA]
     # Sum across cijs
@@ -203,20 +190,22 @@ function residual_norm_affine_online(res_init::Affine_Residual_Init,
 end
 
 """
-`Affine_Residual_Init_Proj`
+`ProjectionResidualNormComputer{T} <: ResidualNormComputer{T}`
+`ProjectionResidualNormComputer(Ap::APArray,bp::APArray,V=nothing,X=nothing)`
 
 A struct for containing the necessary vectors
 and matrices for quickly compute the `X`-norm of the
 residual, `r(u_r,p) = A(p) (u - V u_r) = b(p) - A(p) V u_r`,
 by taking advantage of affine parameter dependence of `A(p)`
-and `b(p)`.
+and `b(p)`. Uses a projection method which is more
+stable than the standard method.
 
 Here, `u` solves `A(p) u = b(p)` with `A` and `b`
 having affine parameter dependence, and `V` is
 a matrix with columns defining bases for approximation
 spaces `u ≈ V u_r`.
 """
-struct Affine_Residual_Init_Proj{T}
+struct ProjectionResidualNormComputer{T} <: ResidualNormComputer{T}
     F::UpdatableQR
     qijs::Vector{Vector{Vector{T}}}
     ij_idxs::Vector{Vector{Int}}
@@ -230,40 +219,16 @@ struct Affine_Residual_Init_Proj{T}
     X::Matrix
 end
 
-"""
-`residual_norm_affine_init(Ais, makeθAi, bis, makeθbi, V[, X=nothing, T=Float64])`
-
-Method that constructs the necessary vectors and matrices to
-quickly compute the `X`-norm of the residual, 
-`r(u_r,p) = A(p) (u - V u_r) = b(p) - A(p) V u_r`,
-by taking advantage of affine parameter dependence of `A(p)`
-and `b(p)`.
-
-Does this in a more numerically stable way by computing
-the projections of `b(p)` onto the span of the columns of 
-`A(p) V`, so no negative cross-term needs to be evaluated.
-
-Pass as input a vector of matrices `Ais`, and a function
-`makeθAi` such that the affine construction of `A` is given by
-`A(p) = ∑_{i=1}^QA makeθAi(p,i) * Ais[i]`, and similarly
-a vector of vectors `bis` and a function `makeθbi` such that
-the affine construction of `b` is given by 
-`b(p) = ∑_{i=1}^Qb makeθbi(p,i) * bis[i]`.
-
-Additionally, pass in a matrix `V` which contains as columns
-a basis for a reduced space, `u ≈ V u_r` with the dimension
-of `u_r` less than that of `u`.
-
-Optionally pass in a matrix `X` from which the `X`-norm of
-the residual will be computed in the method
-`residual_norm_affine_online`. If `X` remains as `nothing`,
-then will choose it to be the identity matrix to compute the
-2-norm of the residual. (NOT YET IMPLEMENTED)
-"""
-function residual_norm_affine_proj_init(Ap::APArray,
-                                        bp::APArray,
-                                        V::VectorOfVectors{T},
-                                        X::Union{Nothing,Matrix}=nothing) where T
+function ProjectionResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorOfVectors,Nothing}=nothing,X::Union{Nothing,Matrix}=nothing)
+    if isnothing(V)
+        T1 = typeof(prod(zero.(eltype.(Ap.arrays))))
+        T2 = typeof(prod(zero.(eltype.(bp.arrays))))
+        T = typeof(zero(T1) * zero(T2))
+        V = VectorOfVectors(size(Ap.arrays[1], 1), 0, T)
+    else
+        T = eltype(V)
+    end
+    
     Ais = Ap.arrays
     bis = bp.arrays
 
@@ -325,18 +290,11 @@ function residual_norm_affine_proj_init(Ap::APArray,
             end
         end
     end
-    return Affine_Residual_Init_Proj{T}(F, qijs, ij_idxs, b_par_ijks, b_perp_idxs,
+    return ProjectionResidualNormComputer{T}(F, qijs, ij_idxs, b_par_ijks, b_perp_idxs,
                                         Ap, bp, QA, Qb, V, X0)
 end
 
-"""
-`add_col_to_V!(res_init, v)`
-
-Method to add a vector `v` to the columns of the matrix `V`
-in the `Affine_Residual_Init_Proj` object, `res_init`, without
-recomputing all terms.
-"""
-function add_col_to_V!(res_init::Affine_Residual_Init_Proj{T}, v::AbstractVector{T}) where T
+function update!(res_init::ProjectionResidualNormComputer{T}, v::AbstractVector{T}) where T
     Ais = res_init.Ap.arrays
     bis = res_init.bp.arrays
 
@@ -386,26 +344,7 @@ function add_col_to_V!(res_init::Affine_Residual_Init_Proj{T}, v::AbstractVector
     end
 end
 
-"""
-`residual_norm_affine_online(res_init, u_r, p)`
-
-Method that given `res_init`, an `Affine_Residual_Init_Proj`
-object, computes the 2-norm of the residual, 
-`r(u_r,p) = A(p) (u - V u_r) = b(p) - A(p) V u_r`,
-by taking advantage of affine parameter dependence of `A(p)`
-and `b(p)`.
-
-Does this in a more numerically stable way by computing
-the projections of `b(p)` onto the span of the columns of 
-`A(p) V`, so no negative cross-term needs to be evaluated.
-
-Pass as input the `Affine_Residual_Init` object, `res_init`,
-a reduced vector `u_r`, and the corresponding parameter
-vector `p`.
-"""
-function residual_norm_affine_online(res_init::Affine_Residual_Init_Proj{T},
-                                     u_r::AbstractVector{T},
-                                     p) where T
+function compute(res_init::ProjectionResidualNormComputer, u_r::AbstractVector, p)
     θbis = [res_init.bp.makeθi(p,i) for i in 1:res_init.Qb]
     θAis = [res_init.Ap.makeθi(p,i) for i in 1:res_init.QA]
     # Compute ||b_par(p) - A(p) V u_r||
