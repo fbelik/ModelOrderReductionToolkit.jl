@@ -64,7 +64,8 @@ function min_sigma_rbf(params::Union{Matrix,Vector},
                        makeA::Function,
                        ϕ::Function=gaussian_rbf;
                        kmaxiter=1000,
-                       noise=1)
+                       noise=1,
+                       progress=true)
 
     if typeof(params) <: Matrix
         P,NP = size(params)
@@ -82,14 +83,11 @@ function min_sigma_rbf(params::Union{Matrix,Vector},
     end
     lP = length(params)
     lPten = ceil(Int, lP / 10)
-    for i in eachindex(params)
+    for i in (progress ? ProgressBar(eachindex(params)) : eachindex(params))
         p = params[i]
         # Compute minimum singular value
         A = makeA(p)
         σ_mins[i] = smallest_sval(A, kmaxiter)
-        if (i % lPten == 0 && noise >= 1)
-            @printf("%.1f%% complete\n", 100*i/lP)
-        end
     end
     if noise >= 1
         println("-----")

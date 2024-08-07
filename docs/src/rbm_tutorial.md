@@ -38,13 +38,40 @@ Now, suppose we wished to solve an inverse problem, such as finding the paramete
 
 If we are willing to spend **offline** time to generate an RB space, ``V``, with dimension ``r\ll N``, then we can much more efficiently spend time **online** computing the Galerkin projected solution, ``V u_r(p)``, at a fraction of a cost of computing the full-order solution.
 
-### Proper Orthogonal Decomposition/Principal Component Analysis
+We will consider a steady state heat equation for this tutorial with affine-parameter dependent spacial diffusion coefficient and forcing terms. Once discretized, it can be written in the form ``A(p) u = b(p)`` with ``A(p)`` and ``b(p)`` each with affine parameter dependence. This model can be instantiated in `ModelOrderReductionToolkit.jl` by calling `PoissonModel()`.
 
-For now, we will assume a discrete set of parameters ``\mathcal{P} = \{p_1,\ldots,p_P\}`` from which we wish to make estimations on. Additionally, we will suppose we know all of the full-order solutions, and store them in the solution matrix
-```math
-S = \begin{bmatrix} | & | &  & | \\ u(p_1) & u(p_2) & \cdots & u(p_P) \\  | & | &  & |  \end{bmatrix} \in \mathbb{R}^{N \times P}.
+```@example 1
+using ModelOrderReductionToolkit
+model = PoissonModel()
 ```
-Note that computing this full matrix may be very expensive if ``N`` is large.
+
+We can then form a snapshot matrix over a set of ``P=125`` parameter vectors.
+```@example 1
+params = [[i,j,k] for i in range(0,1,5) for j in range(0,1,5) for k in range(0,1,5)]
+P = length(params)
+
+S = zeros(output_length(model), P)
+for i in 1:P
+    p = params[i]
+    u = model(p)
+    S[:,i] .= u
+end
+
+S
+```
+Let's visualize the solutions.
+```@example 1
+using Plots
+plt = plot()
+for i in 1:P
+    plot!(S[:,i],label=false,alpha=0.25)
+end
+title!("Solution Set")
+savefig(plt, "rbm_tut1.svg"); nothing # hide
+```
+![](rbm_tut1.svg)
+
+### Proper Orthogonal Decomposition/Principal Component Analysis
 
 We know from the Schmidt-Eckart-Young theorem that the $r$-dimensional linear subspace that captures the most "energy" from the solutions in ``S`` (per the Frobenius norm) is the one spanned by the first ``r`` left singular vectors of ``S``. More specifically, if we denote ``V\in\mathbb{R}^{N\times r}`` to be the matrix whose ``r`` columns are the first ``r`` left singular vectors of ``S``, and let ``\sigma_1\geq\sigma_2\geq\ldots\geq\sigma_N`` be the singular values of ``S``, then we can write that
 ```math
@@ -52,127 +79,16 @@ We know from the Schmidt-Eckart-Young theorem that the $r$-dimensional linear su
 ```
 where ``VV^TS`` is the projection of ``S`` onto the columns of ``V``.
 
-```@setup 1
-using ModelOrderReductionToolkit
-using LinearAlgebra
-using Plots
-using Colors
-using SparseArrays
-using Random
-Random.seed!(1)
-gr()
-# Boundary conditions
-uleft = 0.0
-uright = 1.0
-p_len = 2
-κ_i(i,x) = 1.1 .+ sin.(2π * i * x)
-κ(x,p) = sum([p[i] * κ_i(i,x) for i in 1:p_len])
-# Parameter dependent source term
-f_i(i,x) = i == 1 ? (x .> 0.5) .* 10.0 : 20 .* sin.(2π * (i-1) * x)
-f(x,p) = f_i(1,x) .+ sum([p[i-1] * f_i(i,x) for i in 2:p_len+1])
-# Space setup
-h = 1e-3
-xs = Vector((0:h:1)[2:end-1])
-xhalfs = ((0:h:1)[1:end-1] .+ (0:h:1)[2:end]) ./ 2
-N = length(xs)
-# Helper to generate random parameter vector
-randP() = 0.1 .+ 2 .* rand(p_len)
-# Ai matrices
-function makeAi(i)
-    A = spzeros(N,N)
-    for j in 1:N
-        A[j,j]   = (κ_i(i, xhalfs[j]) + κ_i(i, xhalfs[j+1])) / h^2
-        if j<N
-            A[j,j+1] = -1 * κ_i(i, xhalfs[j+1]) / h^2
-        end
-        if j>1
-            A[j,j-1] = -1 * κ_i(i, xhalfs[j]) / h^2
-        end
-    end
-    return A
-end
-Ais = Matrix{Float64}[]
-for i in 1:p_len
-    push!(Ais, makeAi(i))
-end
-# θAis
-function makeθAi(p,i)
-    return p[i]
-end
-function makeA(p)
-    A = spzeros(size(Ais[1]))
-    for i in eachindex(Ais)
-        A .+= makeθAi(p,i) .* Ais[i]
-    end
-    return A
-end
-# bi vectors
-function makebi(i)
-    b = f_i(i,xs)
-    if i > 1
-            b[1] += uleft * κ_i(i, xhalfs[1]) / h^2
-            b[end] += uright * κ_i(i, xhalfs[end]) / h^2
-        end
-    return b
-end
-bis = Vector{Float64}[]
-for i in 1:p_len+1
-    push!(bis, makebi(i))
-end
-# θbis
-function makeθbi(p,i)
-    if i == 1
-        return 1.0
-    else
-        return p[i-1]
-    end
-end
-function makeb(p)
-    b = zeros(size(bis[1]))
-    for i in eachindex(bis)
-        b .+= makeθbi(p,i) .* bis[i]
-    end
-    return b
-end
-
-params = []
-for p1 in range(0.1,2.1,10)
-    for p2 in range(0.1,2.1,10)
-        push!(params, [p1,p2])
-    end
-end
-P = length(params)
-
-S = zeros(N, P)
-for i in 1:P
-    p = params[i]
-    u = makeA(p) \ makeb(p)
-    S[:,i] .= u
-end
-```
-Suppose that we have the following solution set with $N=999$ and $P=100$ (see test problem):
-```@example 1
-S
-```
-```@example 1
-plt = plot()
-for i in 1:P
-    plot!(xs, S[:,i],label=false,alpha=0.25)
-end
-title!("Solution Set")
-savefig(plt, "rbm_tut1.svg"); nothing # hide
-```
-![](rbm_tut1.svg)
-
 We can explicitly compute the SVD and pull the first ``r`` columns as 
 ```@example 1
-r = 4
+using LinearAlgebra
+r = 5
 U,s,_ = svd(S)
 V = U[:,1:r]
 nothing; # hide
 ```
 
-We can also plot the exponential singular value decay, suggesting to us that such a RBM will perform well.
+We can also plot the exponential singular value decay, suggesting to us that such an RBM will perform well.
 ```@example 1
 plt = plot(s, yaxis=:log, label=false)
 yaxis!("Singular Values")
@@ -189,9 +105,9 @@ idxs = [rand(1:P) for i in 1:6]
 for i in 1:6
     idx = idxs[i]
     p = params[idx]
-    plot!(xs, S[:,idx], c=colors[i], label=false)
+    plot!(S[:,idx], c=colors[i], label=false)
     u_approx = V * V' * S[:,idx]
-    plot!(xs, u_approx, c=colors[i], label=false, ls=:dash)
+    plot!(u_approx, c=colors[i], label=false, ls=:dash)
 end
 title!("Truth and projected POD solutions")
 savefig(plt, "rbm_tut3.svg"); nothing # hide
@@ -200,27 +116,31 @@ savefig(plt, "rbm_tut3.svg"); nothing # hide
 
 However, we wished to create a reduced order model (ROM) such that given any new parameter value, we can quickly reproduce a new solution. As was noted before, we do this through a Galerkin projection
 ```math
-V^T A(p) V u_r(p) = V^T b \implies u(p) \approx V u_r(p)
+V^T A(p) V u_r(p) = V^T b \implies u(p) \approx V u_r(p) = u_\text{approx}(p)
 ```
-from which we require only inverting a ``4\times4`` matrix. Although this is no longer guaranteed "optimal" by the Schmidt-Eckart-Young theorem, let's see how this performs on the same snapshots.
+from which we require only inverting an ``r\times r`` matrix. Although this is no longer guaranteed "optimal" by the Schmidt-Eckart-Young theorem, let's see how this performs on the same snapshots. To perform this task in `ModelOrderReductionToolkit.jl`, we pass the snapshot matrix into a `PODReductor` object and form a ROM from the reductor.
 ```@example 1
+pod_reductor = PODReductor(model)
+add_to_rb!(pod_reductor, S)
+pod_rom = form_rom(pod_reductor, r)
 plt = plot()
 colors = palette(:tab10)
 for i in 1:6
     idx = idxs[i]
     p = params[idx]
-    plot!(xs, S[:,idx], c=colors[i], label=false)
-    u_r = (V' * makeA(p) * V) \ (V' * makeb(p))
-    plot!(xs, V * u_r, c=colors[i], label=false, ls=:dash)
+    plot!(S[:,idx], c=colors[i], label=false)
+    u_r = pod_rom(p)
+    u_approx = lift(pod_reductor, u_r)
+    plot!(u_approx, c=colors[i], label=false, ls=:dash)
 end
 title!("Truth and projected Galerkin POD solutions")
 savefig(plt, "rbm_tut4.svg"); nothing # hide
 ```
 ![](rbm_tut4.svg)
 
-As we can see from these plots, a ``4``-dimensional approximation is quite accurate here! Even though after discretization, these solutions lie in ``\mathbb{R}^{999}``, we have shown that the solution manifold lies approximately on a small dimensional space. Additionally, even though we were only guaranteed "optimality" from direct projection of solutions, we still have very good accuracy when we use a Galerkin projection on the problem.
+As we can see from these plots, a ``5``-dimensional approximation is quite accurate here! Even though after discretization, these solutions lie in ``\mathbb{R}^{999}``, we have shown that the solution manifold lies approximately on a ``5``-dimensional space. Additionally, even though we were only guaranteed "optimality" from direct projection of solutions, we still have very good accuracy when we use a Galerkin projection on the problem.
 
-This process of projection onto left singular values is typically called **Proper Orthogonal Decomposition** (POD), or **Principal Component Analysis** (PCA).
+This process of projection onto left singular values is typically called **Proper Orthogonal Decomposition** (POD). Note that forming a `PODReductor` will call `svd` on the snapshot matrix. We can access the singular values from `pod_reductor.S`, and the left-singular vectors from `pod_reductor.V` (note that left-singular vectors are usually denoted with ``U``, but we use ``V`` to stick with RB notation).
 
 ### Strong Greedy Algorithm
 
@@ -241,9 +161,8 @@ and again orthogonalize
 s_i^{(j)} = s_i^{(j-1)} - (v_j^T s_i^{(j-1)}) v_j,\quad i=1,\ldots,P.
 ```
 
-Note that this procedure is exactly like performing a pivoted QR factorization on the matrix ``S``. Let's form this reduced basis of dimension ``4``:
+Note that this procedure is exactly like performing a pivoted QR factorization on the matrix ``S``. Let's form this reduced basis of the same dimension:
 ```@example 1
-r = 4
 Q,_,_ = qr(S, LinearAlgebra.ColumnNorm())
 V = Q[:,1:r]
 nothing; # hide
@@ -255,222 +174,138 @@ plt = plot()
 for i in 1:6
     idx = idxs[i]
     p = params[idx]
-    plot!(xs, S[:,idx], c=colors[i], label=false)
+    plot!(S[:,idx], c=colors[i], label=false)
     u_approx = V * V' * S[:,idx]
-    plot!(xs, u_approx, c=colors[i], label=false, ls=:dash)
+    plot!(u_approx, c=colors[i], label=false, ls=:dash)
 end
-title!("Truth and projected QR solutions")
+title!("Truth and projected SG solutions")
 savefig(plt, "rbm_tut5.svg"); nothing # hide
 ```
 ![](rbm_tut5.svg)
 
-And again, we can form a ROM by Galerkin projection:
+Now, we will use an `SGReductor` object to form a Galerkin-projected reduced order model.
 ```@example 1
+sg_reductor = SGReductor(model)
+add_to_rb!(sg_reductor, S)
+sg_rom = form_rom(sg_reductor, r)
 plt = plot()
 for i in 1:6
     idx = idxs[i]
     p = params[idx]
-    plot!(xs, S[:,idx], c=colors[i], label=false)
-    u_r = (V' * makeA(p) * V) \ (V' * makeb(p))
-    plot!(xs, V * u_r, c=colors[i], label=false, ls=:dash)
+    plot!(S[:,idx], c=colors[i], label=false)
+    u_r = sg_rom(p)
+    u_approx = lift(sg_reductor, u_r)
+    plot!(u_approx, c=colors[i], label=false, ls=:dash)
 end
-title!("Truth and projected Galerkin QR solutions")
+title!("Truth and projected Galerkin SG solutions")
 savefig(plt, "rbm_tut6.svg"); nothing # hide
 ```
 ![](rbm_tut6.svg)
 
-This procedure also performs quite well. We may expect the POD/PCA algorithm to be a bit more accurate/general as it can choose basis elements that are not in the columns of ``S``.
+This procedure also performs quite well. We may expect the POD algorithm to be a bit more accurate/general as it can choose basis elements that are not "in the columns" of ``S``. Similar to the `PODReductor` object, we can access the reduced basis from `sg_reductor.V`.
 
 ### Weak Greedy Algorithm
 
 Now, one downside of the above procedures was that we needed the matrix of full-order solutions ahead of time to perform either the SVD or QR factorizations. If our model was very computationally expensive, we would not want to have to do this. This is where the **weak greedy algorithm** is useful. It is again a greedy algorithm as we will be choosing "columns" greedily, but we wish to not have to construct all columns directly.
 
-Suppose now, instead of having access to the columns ``s_i`` which correspond to the full-order solutions ``u(p_i)``, we only have access to the parameter values ``p_i``. One can show that there exists an upper-bound on projection error, given by
+Suppose now, instead of having access to the columns ``s_i`` which correspond to the full-order solutions ``u(p_i)``, we only have access to the parameter values ``p_i``. Generally, we would wish to have an a priori error estimator for a Galerkin-projected ROM such that we could loop over our parameter vectors and choose the one with the estimated maximum error. In this tutorial, we use a stability-residual approach
+
+One can show that there exists an upper-bound on projection error, given by
 ```math
 ||u(p) - V u_r(p)|| = ||A(p)^{-1} b(p) - V u_r(p)|| \leq \frac{||b(p) - A(p) V u_r(p)||}{\sigma_{min}(A(p))}
 ```
 where ``\sigma_{min}(A(p))`` is the minimum singular value of ``A(p)``. Note that this upperbound on the error does not depend on the full order solution, ``u(p)``. So, we loop through each parameter vector ``p_i``, and select the one, ``p^*`` that yields the highest upper-bound error. We then form the full-order solution ``u(p_i)``, normalize it, and append it as a column of ``V``. Note that unlike in the strong algorithm, since we are not using true error, we are not guaranteed to choose the next "best" column of ``V``. However, if we are computing a reduced basis of size ``r``, then we only need to call the full-order model ``r`` times.
 
-We now need a method to approximate (a lowerbound of ) ``\sigma_{min}(A(p))``, and then the numerator of the above can be computed explicitly. One way of doing this is through the **successive constraint method** (SCM). This method takes advantage of the affine parameter dependence of ``A(p)``, see source 1. To compute a successive constraint object, taking note that our ``A(p)`` is a positive definite matrix, we use the following code:
+We now need a method to approximate (a lowerbound of ) ``\sigma_{min}(A(p))``, and then the numerator of the above can be computed explicitly. One way of doing this is through the **successive constraint method** (SCM). This method takes advantage of the affine parameter dependence of ``A(p)``, see source 1. We will form an SCM object and initialize an object to compute the norm of the residual through a `StabilityResidualErrorEstimator`.
 ```@example 1
-using ModelOrderReductionToolkit
-Ap = APArray(Ais, makeθAi) # Form affine parameter-dependent arrays
-bp = APArray(bis, makeθbi)
-Ma = 50; Mp = 15; ϵ_SCM = 1e-2;
-scm = initialize_SCM_SPD(params, Ap, Ma, Mp, ϵ_SCM)
+error_estimator = StabilityResidualErrorEstimator(model, params);
 ```
-We can then create a lower-bound approximation of the singular value of ``A(p)`` by calling it directly:
+Note that this method assumes that the model is coercive, i.e., the matrix `A(p)` is symmetric positive definite for each parameter. For this model, we know that this is the case if the parameter vectors have entries between 0 and 1. For a noncoercive model, add the keyword argument `coercive=false`. With this in place, we have enough to construct the weak greedy reductor.
 ```@example 1
-scm(randP())
+wg_reductor = WGReductor(model, error_estimator)
 ```
-With this in place, we have enough to construct the weak greedy RB method. Note that the method below requires each of the `Ais`, `bis`, and methods `makeθAi` and `makeθbi` for the affine construction of `A(p)` and `b(p)`. This is so that looping over the parameter set does not depend on the large dimension `N`.
+Note that we have to build the reduced basis by looping over a parameter set, we will do this by calling `add_to_rb!`. Afterwards, since the reductor must store the ROM at each step to make error approximations, we can simply pull it from the reductor object.
 ```@example 1
-ϵ_greedy = 1e-1  
-r = 4
-greedy_sol = GreedyRBAffineLinear(params, Ap, bp, scm, ϵ_greedy, max_snapshots=r)
+add_to_rb!(wg_reductor, params, r)
+println(" ") # hide
 ```
-We can access the greedily chosen reduced basis by calling (note that for computational purposes, ``V`` is stored as a VectorOfVectors object).
 ```@example 1
-V = greedy_sol.V
+wg_rom = wg_reductor.rom
 ```
-We can now visualize these solutions by calling `greedy_sol(p)` on a paramater vector `p`.
+
+
+We can access the greedily chosen reduced basis by calling (note that for computational purposes, ``V`` is stored as a `VectorOfVectors` object).
+```@example 1
+wg_reductor.V
+```
+We can now visualize these solutions by calling `wg_rom(p)` on a paramater vector `p`.
 ```@example 1
 plt = plot()
 for i in 1:6
     idx = idxs[i]
     p = params[idx]
-    plot!(xs, S[:,idx], c=colors[i], label=false)
-    u_r = greedy_sol(p,full=false) # full=false, size r vector instead of N
-    plot!(xs, V * u_r, c=colors[i], label=false, ls=:dash)
+    plot!(S[:,idx], c=colors[i], label=false)
+    u_r = wg_rom(p)
+    u_approx = lift(wg_reductor, u_r)
+    plot!(u_approx, c=colors[i], label=false, ls=:dash)
 end
-title!("Truth and weak greedy solutions")
+title!("Truth and WG solutions")
 savefig(plt, "rbm_tut7.svg"); nothing # hide
 ```
 ![](rbm_tut7.svg)
 
 ### Comparison of the methods
 
-The following method produces all full-order solutions, and then computes errors associated with the weak greedy, strong greedy, and POD/PCA algorithms.
+Let's compare the above algorithms by comparing their average and worst case accuracy over the parameter set.
 ```@example 1
-data = greedy_rb_err_data(params, Ap, bp, scm, 50, noise=0)
+errors = [Float64[] for _ in 1:3]
+for (i,p) in enumerate(params)
+    pod_error = norm(lift(pod_reductor, pod_rom(p)) .- S[:,i])
+    push!(errors[1], pod_error)
+    sg_error = norm(lift(sg_reductor, sg_rom(p)) .- S[:,i])
+    push!(errors[2], sg_error)
+    wg_error = norm(lift(wg_reductor, wg_rom(p)) .- S[:,i])
+    push!(errors[3], wg_error)
+end
+println("Errors for RB dimension r=$r")
+println("POD mean error: $(sum(errors[1]) / length(errors[1]))")
+println("POD worst error: $(maximum(errors[1]))")
+println("SG mean error: $(sum(errors[2]) / length(errors[2]))")
+println("SG worst error: $(maximum(errors[2]))")
+println("WG mean error: $(sum(errors[3]) / length(errors[3]))")
+println("WG worst error: $(maximum(errors[3]))")
 nothing # hide
 ```
-First, we wish to plot the error decay of projecting solutions onto the POD/PCA space, and of forming a Galerkin procedure for POD/PCA:
+
+Let's repeat the process for a reduced basis of dimension ``r=15``
+Let's compare the above algorithms by comparing their average and worst case accuracy over the parameter set.
 ```@example 1
-plt = plot(data[:basis_dim], data[:pca_proj], label="pod/pca proj", yaxis=:log, xlabel="r", ylabel="error")
-plot!(data[:basis_dim], data[:pca_err], label="pod/pca Galerkin")
-title!("Error estimates for RBMs")
-savefig(plt, "rbm_tut8.svg"); nothing # hide
+oldr = r
+r = 15
+pod_rom = form_rom(pod_reductor, r)
+sg_rom = form_rom(sg_reductor, r)
+add_to_rb!(wg_reductor, params, r - oldr)
+wg_rom = wg_reductor.rom
+errors = [Float64[] for _ in 1:3]
+for (i,p) in enumerate(params)
+    pod_error = norm(lift(pod_reductor, pod_rom(p)) .- S[:,i])
+    push!(errors[1], pod_error)
+    sg_error = norm(lift(sg_reductor, sg_rom(p)) .- S[:,i])
+    push!(errors[2], sg_error)
+    wg_error = norm(lift(wg_reductor, wg_rom(p)) .- S[:,i])
+    push!(errors[3], wg_error)
+end
+println("Errors for RB dimension r=$r")
+println("POD mean error: $(sum(errors[1]) / length(errors[1]))")
+println("POD worst error: $(maximum(errors[1]))")
+println("SG mean error: $(sum(errors[2]) / length(errors[2]))")
+println("SG worst error: $(maximum(errors[2]))")
+println("WG mean error: $(sum(errors[3]) / length(errors[3]))")
+println("WG worst error: $(maximum(errors[3]))")
+nothing # hide
 ```
-![](rbm_tut8.svg)
 
-Here, we see that we have exponential convergence in both cases, but the direct projection method has slightly better accuracy. We can add in the plots for the strong greedy method.
-
-```@example 1
-plot!(data[:basis_dim], data[:strong_greedy_proj], label="sg proj")
-plot!(data[:basis_dim], data[:strong_greedy_err], label="sg Galerkin")
-savefig(plt, "rbm_tut9.svg"); nothing # hide
-```
-![](rbm_tut9.svg)
-
-We have the same exponential convergence rates. Finally, we can add in the convergence rates for the weak greedy upperbound error and truth errors.
-
-```@example 1
-plot!(data[:basis_dim], data[:weak_greedy_ub], label="wg ub")
-plot!(data[:basis_dim], data[:weak_greedy_true], label="wg truth")
-plot!(data[:basis_dim], data[:weak_greedy_true_ub], label="wg truth ub")
-savefig(plt, "rbm_tut10.svg"); nothing # hide
-```
-![](rbm_tut10.svg)
-
-A few things to note with these curves. 
-
-1) The `wg ub` curve tells us the maximal upperbound approximation of error used to choose the next snapshot. This is of higher magnitude due to the error we make in approximating the error upperbound.
-2) The `wg truth` curve tells us the truth error of the snapshot chosen with the highest upper-bound error. This curve oscillates as we do not pick the "optimal" strong-greedy snapshot each time.
-3) The `wg truth ub` curve tells us the maximal truth error across snapshots, similar to what would be used in the strong greedy algorithm. This curve is strictly above `wg truth`, and is equal when we do in fact choose the optimal snapshot.
-4) Although `wg truth ub` is above `sg Galerkin`, telling us that we are not making optimal greedy choices, it decays at the same exponential rate telling us that the weak greedy algorithm is still making good choices.
-
-In conclusion, the **weak greedy algorithm** takes advantage of the affine parameter dependence of ``A(p)`` and ``b(p)``, and uses an upperbound error approximator to produce a reduced basis that approximates solutions nearly as well as the strong greedy algorithm and the POD/PCA algorithm.
-
-In order to replicate the code in this tutorial, you will need to run the following setup code which is hidden from the start of this tutorial:
-```julia
-using ModelOrderReductionToolkit
-using LinearAlgebra
-using Plots
-using Colors
-using SparseArrays
-using Random
-Random.seed!(1)
-gr()
-# Boundary conditions
-uleft = 0.0
-uright = 1.0
-p_len = 2
-κ_i(i,x) = 1.1 .+ sin.(2π * i * x)
-κ(x,p) = sum([p[i] * κ_i(i,x) for i in 1:p_len]) 
-# Parameter dependent source term
-f_i(i,x) = i == 1 ? (x .> 0.5) .* 10.0 : 20 .* sin.(2π * (i-1) * x)
-f(x,p) = f_i(1,x) .+ sum([p[i-1] * f_i(i,x) for i in 2:p_len+1])
-# Space setup
-h = 1e-3
-xs = Vector((0:h:1)[2:end-1])
-xhalfs = ((0:h:1)[1:end-1] .+ (0:h:1)[2:end]) ./ 2
-N = length(xs)
-# Helper to generate random parameter vector
-randP() = 0.1 .+ 2 .* rand(p_len)
-# Ai matrices
-function makeAi(i)
-    A = spzeros(N,N)
-    for j in 1:N
-        A[j,j]   = (κ_i(i, xhalfs[j]) + κ_i(i, xhalfs[j+1])) / h^2
-        if j<N
-            A[j,j+1] = -1 * κ_i(i, xhalfs[j+1]) / h^2
-        end
-        if j>1
-            A[j,j-1] = -1 * κ_i(i, xhalfs[j]) / h^2
-        end
-    end
-    return A
-end
-Ais = Matrix{Float64}[]
-for i in 1:p_len
-    push!(Ais, makeAi(i))
-end
-# θAis
-function makeθAi(p,i)
-    return p[i]
-end
-function makeA(p)
-    A = zeros(size(Ais[1]))
-    for i in eachindex(Ais)
-        A .+= makeθAi(p,i) .* Ais[i]
-    end
-    return A
-end
-# bi vectors
-function makebi(i)
-    b = f_i(i,xs)
-    if i > 1
-            b[1] += uleft * κ_i(i, xhalfs[1]) / h^2
-            b[end] += uright * κ_i(i, xhalfs[end]) / h^2
-        end
-    return b
-end
-bis = Vector{Float64}[]
-for i in 1:p_len+1
-    push!(bis, makebi(i))
-end
-# θbis
-function makeθbi(p,i)
-    if i == 1
-        return 1.0
-    else
-        return p[i-1]
-    end
-end
-function makeb(p)
-    b = zeros(size(bis[1]))
-    for i in eachindex(bis)
-        b .+= makeθbi(p,i) .* bis[i]
-    end
-    return b
-end
-
-params = []
-for p1 in range(0.1,2.1,10)
-    for p2 in range(0.1,2.1,10)
-        push!(params, [p1,p2])
-    end
-end
-P = length(params)
-
-S = zeros(N, P)
-for i in 1:P
-    p = params[i]
-    u = makeA(p) \ makeb(p)
-    S[:,i] .= u
-end
-```
+In conclusion, the weak greedy algorithm takes advantage of the affine parameter dependence of ``A(p)`` and ``b(p)``, and uses an upper-bound error approximator to produce a reduced basis that approximates solutions with comparable error compared to the strong greedy algorithm and the POD algorithm without needing to compute all solutions ahead of time.
 
 ### References:
 1. D.B.P. Huynh, G. Rozza, S. Sen, A.T. Patera. A successive constraint linear optimization method for lower bounds of parametric coercivity and inf–sup stability constants. Comptes Rendus Mathematique. Volume 345, Issue 8. 2007. Pages 473-478. https://doi.org/10.1016/j.crma.2007.09.019.
