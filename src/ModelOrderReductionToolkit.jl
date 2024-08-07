@@ -5,6 +5,7 @@ using DescriptorSystems: dss, AbstractDescriptorStateSpace
 using JuMP
 using LinearAlgebra
 using NearestNeighbors
+using OrdinaryDiffEq: ODEProblem
 using Printf
 using ProgressBars: ProgressBar
 using Random: randperm
@@ -59,6 +60,9 @@ export LinearModel
 export LinearMatrixModel
 export LTIModel
 export to_frequency_domain
+export to_ode_problem
+export to_ss
+export to_dss
 export PoissonModel
 export PenzlModel
 export MISOPenzlModel

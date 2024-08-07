@@ -30,8 +30,12 @@ function LinearModel(Ap::APArray, b::AbstractVector)
 end
 
 function Base.show(io::Core.IO, model::LinearModel)
-    res  = "A(p) x(p) = b(p) with output dimension $(size(model.b_alloc)) with $(length(model.Ap.arrays)) LHS affine terms and $(length(model.bp.arrays)) RHS affine terms"
-    print(io, res)
+    res  = "A(p) x(p) = b(p) with output length $(size(model.A_alloc, 2))"
+    println(io, res)
+    print(io, "A - ")
+    println(io, model.Ap)
+    print(io, "b - ")
+    print(io, model.bp)
 end
 
 function (model::LinearModel)(p, i::Int=1)
@@ -47,11 +51,7 @@ end
 function output_type(model::LinearModel)
     T1 = eltype(model.A_alloc)
     T2 = eltype(model.b_alloc)
-    if T1 == T2
-        return T1
-    else
-        return typeof(zero(T1) * zero(T2))
-    end
+    return typeof(zero(T1) * zero(T2))
 end
 
 """

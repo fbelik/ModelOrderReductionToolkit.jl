@@ -140,13 +140,13 @@ struct WGReductor{NOUT}
 end
 
 function Base.show(io::Core.IO, reductor::WGReductor)
-    res  = "WG reductor with RB dimension $(size(reductor.V,2))."
+    res  = "WG reductor with RB dimension $(size(reductor.V,2))"
     println(io, res)
     print(io, "FOM: ")
     println(io, reductor.model)
     print(io, "ROM: ")
     println(io, reductor.rom)
-    print(io, "Increase RB dimension with add_to_rb!.")
+    print(io, "Increase RB dimension with add_to_rb!(reductor, params) or add_to_rb!(reductor, params, r)")
 end
 
 """
@@ -275,7 +275,7 @@ function form_rom(wg_reductor::WGReductor, r=-1)
     if (size(V, 2) < r)
         error("r=$r must be ≤ $(size(V, 2)), first call add_to_rb! to increase reductor's RB dimension.")
     end
-    return galerkin_project(wg_reductor.model, V, r=r)
+    return galerkin_project(wg_reductor.model, Matrix(V), r=r)
 end
 
 """

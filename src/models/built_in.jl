@@ -81,8 +81,7 @@ end
 `model = PenzlModel()`
 
 Generates the standard Penzl `LTIModel` with
-one input, one output, and a state of dimension
-1006.
+one input, one output, and 1006 dimension state variable.
 """
 function PenzlModel()
     matrices = [

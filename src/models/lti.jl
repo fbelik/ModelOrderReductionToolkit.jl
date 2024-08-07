@@ -30,28 +30,32 @@ function LTIModel(A_in::Union{AbstractMatrix,APArray},
                   E_in::Union{UniformScaling,AbstractMatrix,APArray}=I)
     (A, Ap) = begin 
         if A_in isa APArray
-            (similar(A_in.arrays[1]), A_in)
+            T = typeof(prod(zero.(eltype.(A_in.arrays))))
+            (Matrix{T}(undef, size(A_in.arrays[1])), A_in)
         else
             (A_in, nothing)
         end
     end
     (B, Bp) = begin 
         if B_in isa APArray
-            (similar(B_in.arrays[1]), B_in)
+            T = typeof(prod(zero.(eltype.(B_in.arrays))))
+            (Matrix{T}(undef, size(B_in.arrays[1])), B_in)
         else
             (B_in, nothing)
         end
     end
     (C, Cp) = begin 
         if C_in isa APArray
-            (similar(C_in.arrays[1]), C_in)
+            T = typeof(prod(zero.(eltype.(C_in.arrays))))
+            (Matrix{T}(undef, size(C_in.arrays[1])), C_in)
         else
             (C_in, nothing)
         end
     end
     (D, Dp) = begin 
         if D_in isa APArray
-            (similar(D_in.arrays[1]), D_in)
+            T = typeof(prod(zero.(eltype.(D_in.arrays))))
+            (Matrix{T}(undef, size(D_in.arrays[1])), D_in)
         elseif D_in isa Real
             (D_in .* ones(typeof(D_in), size(C, 1), size(B, 2)), nothing)
         else
@@ -60,7 +64,8 @@ function LTIModel(A_in::Union{AbstractMatrix,APArray},
     end
     (E, Ep) = begin 
         if E_in isa APArray
-            (similar(E_in.arrays[1]), E_in)
+            T = typeof(prod(zero.(eltype.(E_in.arrays))))
+            (Matrix{T}(undef, size(E_in.arrays[1])), E_in)
         else
             (E_in, nothing)
         end
@@ -117,6 +122,45 @@ function (model::LTIModel)(p)
     end
 end
 
+function output_length(model::LTIModel)
+    return size(model.A,2)
+end
+
+function output_type(model::LTIModel)
+    T1 = eltype(model.A)
+    T2 = eltype(model.B)
+    T3 = eltype(model.E)
+    return typeof(zero(T1) * zero(T2) * zero(T3))
+end
+
+function f_lti(dx, x, p, t)
+    A, B, E, u = p
+    # dx .= E \ (A * x .+ B * u(t))
+    mul!(dx, A, x)
+    mul!(dx, B, u(t), 1, 1)
+    ldiv!(E, dx)
+end
+
+"""
+`to_ode_problem(model[, p=nothing; u=(t->zeros(size(model.B, 2))), x0=0.0, tspan=(0,1)])`
+
+Creates an `ODEProblem` for the `model <: LTISystem` for a given input `u(t)`.
+Note that this is the ODE for the state variable `x`. Once have formed the solution
+object, will have to multiply by `model.C` to get the output `y`. Note that
+`DifferentialEquations.jl` names the output `u`, which for this problem is the state
+variable `x`, not the input `u`.
+"""
+function to_ode_problem(model::LTIModel, p=nothing; u=(t->zeros(size(model.B, 2))), x0::Union{Number,AbstractVector}=0.0, tspan=(0,1))
+    if !isnothing(p)
+        model(p)
+    end
+    if isa(x0, Number)
+        x0 = x0 .* ones(output_type(model), output_length(model))
+    end
+    E = isa(model.E, VectorOfVectors) ? Matrix(model.E) : model.E
+    ode_p = (Matrix(model.A), Matrix(model.B), E, u)
+    return ODEProblem(f_lti, x0, tspan, ode_p)
+end
 
 """
 `to_ss(model[, p=nothing])`
@@ -136,14 +180,14 @@ end
 `to_dss(model[, p=nothing])`
 
 Initializes the model to the parameter `p` if passed
-in, then returns a `DescriptorControlSystems.jl`
-`DescriptorControlSystems` object. 
+in, then returns a `DescriptorSystems.jl`
+`DescriptorStateSpace` object. 
 """
 function to_dss(model::LTIModel, p=nothing)
     if !isnothing(p)
         model(p)
     end
-    return dss(model.A, model.E, model.B, model.C, model.D)
+    return dss(Matrix(model.A), isa(model.E, UniformScaling) ? model.E : Matrix(model.E), Matrix(model.B), Matrix(model.C), Matrix(model.D))
 end
 
 """
@@ -152,9 +196,11 @@ end
 Assuming null initial conditions, uses the Laplace transform
 to convert the `LTIModel` into a `LinearMatrixModel` for which the
 first element of the parameter vector is the imaginary part of
-the frequency variable.
+the frequency variable. The model is of the form
+`sE(p) X = A(p) X + B(p)` where `X` is the Laplace variable
+for `X` and `s = 0 + iω`
 """
-function to_frequency_domain(model::LTIModel)
+function to_frequency_domain(model::LTIModel) # TODO: Add Re(s) != 0 argument?
     imEp_arrs = begin 
         if isnothing(model.Ep)
             if isa(model.E, UniformScaling)
@@ -186,7 +232,7 @@ function to_frequency_domain(model::LTIModel)
 end
 
 """
-NOTE: Assume W'V = I??
+`galerkin_project(model, V[, W=V, ])`
 """
 function galerkin_project(model::LTIModel, V::AbstractMatrix, W::AbstractMatrix=V; r=-1)
     N, n = size(V)

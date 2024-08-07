@@ -5,10 +5,11 @@ makedocs(
     sitename = "ModelOrderReductionToolkit.jl",
     modules  = [ModelOrderReductionToolkit],
     pages    = [
-        "Docstrings" => "index.md",
-        "RBM Tutorial" => "rbm_tutorial.md"
+        "Models and Reductors" => "index.md",
+        "RBM Tutorial" => "rbm_tutorial.md",
+        "Additional Docstrings" => "docs.md"
     ],
-    checkdocs = :none,
+    checkdocs = :exports,
     format = Documenter.HTML(prettyurls = false)
 )
 

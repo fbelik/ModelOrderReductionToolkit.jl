@@ -4,63 +4,98 @@
 A struct for holding the parts of a POD reductor for
 a `StationaryModel` model. Can access the FOM through 
 `pod_reductor.model`, the snapshot matrix through 
-`pod_reductor.snapshots`, the SVD object through 
-`pod_reductor.decomp`, and the reduced basis 
+`pod_reductor.snapshots`, the singular values through 
+`pod_reductor.S`, and the reduced basis 
 (left singular vectors) through `pod_reductor.V`.
 """
-struct PODReductor
-    model::StationaryModel
-    snapshots::AbstractMatrix
-    decomp::Factorization
-    V::AbstractMatrix
+struct PODReductor{NOUT}
+    model::StationaryModel{NOUT}
+    snapshots::VectorOfVectors
+    parameters::Set
+    S::Vector{Float64}
+    V::VectorOfVectors
 end
 
 """
-`pod_reductor = PODReductor(model, snapshots[; noise=-1])`
+`pod_reductor = PODReductor(model)`
 
-Forms a `PODReductor` object by computing the SVD of the matrix
-`snapshots`.
+Forms a `PODReductor` object for `model <: StationaryModel`.
 """
-function PODReductor(model::StationaryModel, snapshots::AbstractMatrix; noise=1)
-    if noise >= 1
-        println("Forming PCA decomposition of snapshots")
-    end
-    decomp = svd(snapshots)
-    V = decomp.U
-
-    return PODReductor(model, snapshots, decomp, V)
+function PODReductor(model::StationaryModel{NOUT}) where NOUT
+    T = output_type(model)
+    N = output_length(model)
+    snapshots = VectorOfVectors(N, 0, T)
+    parameters = Set()
+    S = Float64[]
+    V = VectorOfVectors(N, 0, T)
+    return PODReductor{NOUT}(model, snapshots, parameters, S, V)
 end
 
 function Base.show(io::Core.IO, reductor::PODReductor)
-    res  = "POD Reductor with $(size(reductor.snapshots)) snapshot matrix."
+    res  = "POD Reductor with $(size(reductor.snapshots)) snapshot matrix"
     println(io, res)
     print(io, "FOM: ")
-    print(io, reductor.model)
+    println(io, reductor.model)
+    print(io, "Increase RB dimension with add_to_rb!(reductor, params)")
 end
 
 """
-`pod_reductor = PODReductor(model, parameters[; noise=-1])`
+`add_to_rb!(pod_reductor, snapshots[; noise=1])`
 
-Forms a `PODReductor` object by computing full order solutions
-on each parameter in the vector `parameters` to form the snaphshot
-matrix, and then calling `PODReductor(model, snapshots, noise=noise)`.
+Directly updates `pod_reductor` with new snapshots given in
+the columns of the matrix `snapshots`.
 """
-function PODReductor(model::StationaryModel{NOUT}, parameters::AbstractVector; noise=1, progress=true) where NOUT
-    p = parameters[1]
-    if noise >= 1
-        println("Forming snapshot matrix")
-    end
-    N = output_length(model)
-    M = length(parameters)
-    snapshots = Matrix{output_type(model)}(undef, N, M * NOUT)
-    for (i,p) in (progress ? ProgressBar(enumerate(parameters)) : enumerate(parameters))
-        for j in 1:NOUT
-            idx = (i-1)*NOUT + j
-            snapshots[:,idx] .= model(p, j)
+function add_to_rb!(pod_reductor::PODReductor, snapshots::AbstractMatrix; noise=1)
+    @assert size(snapshots, 1) == size(pod_reductor.snapshots, 1)
+    for x in eachcol(snapshots)
+        addCol!(pod_reductor.snapshots)
+        if size(pod_reductor.V, 2) < output_length(pod_reductor.model)
+            addCol!(pod_reductor.V)
+            push!(pod_reductor.S, 0.0)
         end
+        pod_reductor.snapshots[:,end] .= x
     end
-    
-    return PODReductor(model, snapshots, noise=noise)
+    if noise >= 1
+        println("Forming SVD of snapshot matrix")
+    end
+    U, S, _ = svd(pod_reductor.snapshots)
+    pod_reductor.S .= S
+    pod_reductor.V .= U
+    nothing
+end
+
+"""
+`add_to_rb!(pod_reductor, parameters[; noise=1, progress=true])`
+
+Loops through the vector of `parameters`, forms their full order solutions,
+adds them to `pod_reductor.snapshots`, and then updates the singular values 
+and singular vectors in `pod_reductor.S` and `pod_reductor.V`.
+"""
+function add_to_rb!(pod_reductor::PODReductor{NOUT}, parameters::AbstractVector; noise=1, progress=true) where NOUT
+    if noise >= 1
+        println("Adding to RB by forming full order solutions")
+    end
+    for (i,p) in (progress ? ProgressBar(enumerate(parameters)) : enumerate(parameters))
+        if p in pod_reductor.parameters
+            continue
+        end
+        for j in 1:NOUT
+            addCol!(pod_reductor.snapshots)
+            if size(pod_reductor.V, 2) < output_length(pod_reductor.model)
+                addCol!(pod_reductor.V)
+                push!(pod_reductor.S, 0.0)
+            end
+            pod_reductor.snapshots[:,end] .= pod_reductor.model(p, j)
+        end
+        push!(pod_reductor.parameters, p)
+    end
+    if noise >= 1
+        println("Forming SVD of snapshot matrix")
+    end
+    U, S, _ = svd(pod_reductor.snapshots)
+    pod_reductor.S .= S
+    pod_reductor.V .= U
+    nothing
 end
 
 """
@@ -72,7 +107,7 @@ Pulls the first `r` left singular vectors from
 the resulting ROM.
 """
 function form_rom(pod_reductor::PODReductor, r=-1)
-    V = pod_reductor.V
+    V = Matrix(pod_reductor.V)
     return galerkin_project(pod_reductor.model, V, r=r)
 end
 

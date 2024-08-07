@@ -1,4 +1,6 @@
 """
+`LinearMatrixModel{NOUT}`
+
 ```
 model = LinearMatrixModel(Ap::APArray, bps::AbstractVector{Union{APArray, <:AbstractVector}})
 model = LinearMatrixModel(Ap::APArray, Bp::APArray)
@@ -6,11 +8,10 @@ model = LinearMatrixModel(models::AbstractVector{LinearModel})
 ```
 
 Struct for containing a parameterized linear model
-`A(p) X = B(p)`, which is stored as a single `LinearModel`, with 
-affine parameter dependence by concatenating the columns of `B(p)`
-and making the parameter a tuple where `p[1]` denotes the column
-of `X` to be solved for, and `p[2]` denotes the standard parameter.
-Ex. `X[:,i] = model((i, p))`.
+`A(p) X = B(p)`, with affine parameter dependence.
+Stored internally similarly to a `LinearModel`, so can solve for
+a single column of the solution by `model(p, i)` for `i=1,...,NOUT`,
+or can solve for the matrix solution by `model(p, 0)`.
 """
 mutable struct LinearMatrixModel{NOUT} <: StationaryModel{NOUT}
     Ap::APArray
@@ -18,15 +19,17 @@ mutable struct LinearMatrixModel{NOUT} <: StationaryModel{NOUT}
     A_alloc::AbstractMatrix
     b_alloc::AbstractVector
     B_alloc::VectorOfVectors
+    fA::Union{Factorization, Nothing}
+    p_last
 end
 
 function LinearMatrixModel(Ap::APArray, bps::AbstractVector{APArray})
     TA = typeof(prod(zero.(eltype.(Ap.arrays))))
-    A_alloc = Matrix{TA}(undef, size(Ap.arrays[1]))
+    A_alloc = all(issparse.(Ap.arrays)) ? spzeros(TA, size(Ap.arrays[1])) : Matrix{TA}(undef, size(Ap.arrays[1]))
     Tb = typeof(prod([prod(zero.(eltype.(bp.arrays))) for bp in bps]))
     b_alloc = Vector{Tb}(undef, length(bps[1].arrays[1]))
     B_alloc = VectorOfVectors(Matrix{Tb}(undef, length(b_alloc), length(bps)))
-    return LinearMatrixModel{length(bps)}(Ap, bps, A_alloc, b_alloc, B_alloc)
+    return LinearMatrixModel{length(bps)}(Ap, bps, A_alloc, b_alloc, B_alloc, nothing, nothing)
 end
 
 function LinearMatrixModel(Ap::APArray, bps::AbstractVector{Union{APArray,<:AbstractVector}})
@@ -52,20 +55,40 @@ function LinearMatrixModel(Ap::APArray, B::AbstractMatrix)
 end
 
 function Base.show(io::Core.IO, model::LinearMatrixModel{NOUT}) where NOUT
-    res  = "A(p) xᵢ(p) = bᵢ(p) for i=1:$NOUT with output dimension $(size(model.b_alloc)), $(length(model.Ap.arrays)) LHS affine terms, and $([length(bp.arrays) for bp in model.bps]) RHS affine terms"
-    print(io, res)
+    res  = "A(p) xᵢ(p) = bᵢ(p) for i=1:$NOUT with output dimension $(size(model.A_alloc,2))"
+    println(io, res)
+    print(io, "A - ")
+    println(io, model.Ap)
+    max_terms = 5
+    for i in 1:min(NOUT,max_terms)
+        print(io, "b_$i - ")
+        print(io, model.bps[i])
+        if i < NOUT
+            println()
+        end
+    end
+    if NOUT > max_terms
+        i = NOUT
+        println(io, "    ⋮")
+        print(io, "b_$i - ")
+        print(io, model.bps[i])
+    end
 end
 
 function (model::LinearMatrixModel{NOUT})(p, i::Int=1) where NOUT
-    formArray!(model.Ap, model.A_alloc, p)
+    if model.p_last != p
+        formArray!(model.Ap, model.A_alloc, p)
+        model.fA = factorize(model.A_alloc)
+    end
+    model.p_last = p
     if i == 0
         for j in 1:NOUT
             formArray!(model.bps[j], view(model.B_alloc, :, j), p)
         end
-        return model.A_alloc \ model.B_alloc
+        return model.fA \ model.B_alloc
     end
     formArray!(model.bps[i], model.b_alloc, p)
-    return model.A_alloc \ model.b_alloc
+    return model.fA \ model.b_alloc
 end
 
 function output_length(model::LinearMatrixModel)

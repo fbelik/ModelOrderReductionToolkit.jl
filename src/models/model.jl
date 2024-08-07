@@ -36,6 +36,10 @@ function (m::NonstationaryModel)(p)
     error("Must implement solution model(p) for NonstationaryModel")
 end
 
+function to_ode_problem(m::NonstationaryModel, p=nothing; x0=0.0, tspan=(0,1))
+    error("Must implement to_ode_problem for NonstationaryModel")
+end
+
 function output_type(m::NonstationaryModel)
     error("Must implement output_type for NonstationaryModel")
 end

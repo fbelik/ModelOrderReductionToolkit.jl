@@ -147,8 +147,8 @@ function update!(res_init::StandardResidualNormComputer, v::AbstractVector)
 end
 
 function compute(res_init::StandardResidualNormComputer, u_r::AbstractVector, p)
-    θbis = [res_init.bp.makeθi(p,i) for i in 1:res_init.Qb]
-    θAis = [res_init.Ap.makeθi(p,i) for i in 1:res_init.QA]
+    θbis = res_init.bp.precompθ ? res_init.bp.makeθ(p) : [res_init.bp.makeθi(p,i) for i in 1:res_init.Qb]
+    θAis = res_init.Ap.precompθ ? res_init.Ap.makeθ(p) : [res_init.Ap.makeθi(p,i) for i in 1:res_init.QA]
     # Sum across cijs
     res = 0.0
     idx = 1
@@ -345,8 +345,8 @@ function update!(res_init::ProjectionResidualNormComputer{T}, v::AbstractVector{
 end
 
 function compute(res_init::ProjectionResidualNormComputer, u_r::AbstractVector, p)
-    θbis = [res_init.bp.makeθi(p,i) for i in 1:res_init.Qb]
-    θAis = [res_init.Ap.makeθi(p,i) for i in 1:res_init.QA]
+    θbis = res_init.bp.precompθ ? res_init.bp.makeθ(p) : [res_init.bp.makeθi(p,i) for i in 1:res_init.Qb]
+    θAis = res_init.Ap.precompθ ? res_init.Ap.makeθ(p) : [res_init.Ap.makeθi(p,i) for i in 1:res_init.QA]
     # Compute ||b_par(p) - A(p) V u_r||
     res = 0.0
     for i in 1:res_init.QA

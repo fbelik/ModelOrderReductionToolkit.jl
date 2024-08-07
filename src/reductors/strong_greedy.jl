@@ -4,64 +4,98 @@
 A struct for holding the parts of an SG reductor for 
 a `StationaryModel` model. Can access the FOM through 
 `sg_reductor.model`, the snapshot matrix through 
-`sg_reductor.snapshots`, the pivoted QR object through 
-`sg_reductor.decomp`, and the reduced basis through 
+`sg_reductor.snapshots`, the pivot order through 
+`sg_reductor.p`, and the reduced basis through 
 `sg_reductor.V`.
 """
-struct SGReductor
-    model::StationaryModel
-    snapshots::AbstractMatrix
-    decomp::Factorization
-    V::AbstractMatrix
+struct SGReductor{NOUT}
+    model::StationaryModel{NOUT}
+    snapshots::VectorOfVectors
+    p::Vector{Int}
+    parameters::Set
+    V::VectorOfVectors
 end
 
 function Base.show(io::Core.IO, reductor::SGReductor)
-    res  = "SG Reductor with $(size(reductor.snapshots)) snapshot matrix."
+    res  = "SG Reductor with $(size(reductor.snapshots)) snapshot matrix"
     println(io, res)
     print(io, "FOM: ")
-    print(io, reductor.model)
+    println(io, reductor.model)
+    print(io, "Increase RB dimension with add_to_rb!(reductor, params)")
 end
 
 """
-`sg_reductor = SGReductor(model, snapshots[; noise=-1])`
+`sg_reductor = SGReductor(model)`
 
-Forms an `SGReductor` object by computing the pivoted QR
-decomposition of the matrix `snapshots`.
+Forms a `SGReductor` object for `model <: StationaryModel`.
 """
-function SGReductor(model::StationaryModel{NOUT}, snapshots::AbstractMatrix; noise=1) where NOUT
-    if noise >= 1
-        println("Forming column-pivoted QR decomposition of snapshots")
-    end
-    decomp = qr(snapshots, ColumnNorm())
-    V = Matrix(decomp.Q)
-
-    return SGReductor(model, snapshots, decomp, V)
-end
-
-"""
-`sg_reductor = SGReductor(model, parameters[; noise=-1])`
-
-Forms an `SGReductor` object by computing full order solutions
-on each parameter in the vector `parameters` to form the snaphshot
-matrix, and then calling `SGReductor(model, snapshots, noise=noise)`.
-"""
-function SGReductor(model::StationaryModel{NOUT}, parameters::AbstractVector; noise=1, progress=true) where NOUT
-    p = parameters[1]
-    if noise >= 1
-        println("Forming snapshot matrix")
-    end
-    x = model(p)
+function SGReductor(model::StationaryModel) 
+    T = output_type(model)
     N = output_length(model)
-    M = length(parameters)
-    snapshots = Matrix{output_type(model)}(undef, N, M*NOUT)
+    snapshots = VectorOfVectors(N, 0, T)
+    p = Int[]
+    parameters = Set()
+    V = VectorOfVectors(N, 0, T)
+    return SGReductor(model, snapshots, p, parameters, V)
+end
+
+"""
+`add_to_rb!(sg_reductor, snapshots[; noise=1])`
+
+Directly updates `sg_reductor` with new snapshots given in
+the columns of the matrix `snapshots`.
+"""
+function add_to_rb!(sg_reductor::SGReductor, snapshots::AbstractMatrix; noise=1)
+    @assert size(snapshots, 1) == size(sg_reductor.snapshots, 1)
+    for x in eachcol(snapshots)
+        addCol!(sg_reductor.snapshots)
+        if size(sg_reductor.V, 2) < output_length(sg_reductor.model)
+            addCol!(sg_reductor.V)
+            push!(sg_reductor.p, 0)
+        end
+        sg_reductor.snapshots[:,end] .= x
+    end
+    if noise >= 1
+        println("Forming column-pivoted QR of snapshot matrix")
+    end
+    decomp = qr(sg_reductor.snapshots, ColumnNorm())
+    sg_reductor.V .= decomp.Q[:, 1:min(size(sg_reductor.snapshots, 2),output_length(sg_reductor.model))]
+    sg_reductor.p .= decomp.p
+    nothing
+end
+
+
+"""
+`add_to_rb!(sg_reductor, parameters[; noise=1, progress=true])`
+
+Loops through the vector of `parameters`, forms their full order solutions,
+adds them to `sg_reductor.snapshots`, and then updates the reduced basis
+in `sg_reductor.V`.
+"""
+function add_to_rb!(sg_reductor::SGReductor{NOUT}, parameters::AbstractVector; noise=1, progress=true) where NOUT
+    if noise >= 1
+        println("Adding to RB by forming full order solutions")
+    end
     for (i,p) in (progress ? ProgressBar(enumerate(parameters)) : enumerate(parameters))
+        if p in sg_reductor.parameters
+            continue
+        end
         for j in 1:NOUT
-            idx = (i-1)*NOUT + j
-            snapshots[:,idx] .= model(p, j)
+            addCol!(sg_reductor.snapshots)
+            if size(sg_reductor.V, 2) < output_length(sg_reductor.model)
+                addCol!(sg_reductor.V)
+                push!(sg_reductor.p, 0)
+            end
+            sg_reductor.snapshots[:,end] .= sg_reductor.model(p, j)
         end
     end
-    
-    return SGReductor(model, snapshots, noise=noise)
+    if noise >= 1
+        println("Forming column-pivoted QR of snapshot matrix")
+    end
+    decomp = qr(sg_reductor.snapshots, ColumnNorm())
+    sg_reductor.V .= decomp.Q[:, 1:min(size(sg_reductor.snapshots, 2),output_length(sg_reductor.model))]
+    sg_reductor.p .= decomp.p
+    nothing
 end
 
 """
@@ -72,7 +106,7 @@ a ROM with RB of dimension `r`. If `r=-1`, uses
 all available columns of `sg_reductor.V`.
 """
 function form_rom(sg_reductor::SGReductor, r=-1)
-    V = sg_reductor.V
+    V = Matrix(sg_reductor.V)
     return galerkin_project(sg_reductor.model, V, r=r)
 end
 

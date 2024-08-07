@@ -120,7 +120,8 @@ V^T A(p) V u_r(p) = V^T b \implies u(p) \approx V u_r(p) = u_\text{approx}(p)
 ```
 from which we require only inverting an ``r\times r`` matrix. Although this is no longer guaranteed "optimal" by the Schmidt-Eckart-Young theorem, let's see how this performs on the same snapshots. To perform this task in `ModelOrderReductionToolkit.jl`, we pass the snapshot matrix into a `PODReductor` object and form a ROM from the reductor.
 ```@example 1
-pod_reductor = PODReductor(model, S)
+pod_reductor = PODReductor(model)
+add_to_rb!(pod_reductor, S)
 pod_rom = form_rom(pod_reductor, r)
 plt = plot()
 colors = palette(:tab10)
@@ -139,7 +140,7 @@ savefig(plt, "rbm_tut4.svg"); nothing # hide
 
 As we can see from these plots, a ``5``-dimensional approximation is quite accurate here! Even though after discretization, these solutions lie in ``\mathbb{R}^{999}``, we have shown that the solution manifold lies approximately on a ``5``-dimensional space. Additionally, even though we were only guaranteed "optimality" from direct projection of solutions, we still have very good accuracy when we use a Galerkin projection on the problem.
 
-This process of projection onto left singular values is typically called **Proper Orthogonal Decomposition** (POD). Note that forming a `PODReductor` will call `svd` on the snapshot matrix. We can access the Julia singular value decomposition object from `pod_reductor.decomp`. Additionally, the left-singular vectors are stored in `pod_reductor.V`.
+This process of projection onto left singular values is typically called **Proper Orthogonal Decomposition** (POD). Note that forming a `PODReductor` will call `svd` on the snapshot matrix. We can access the singular values from `pod_reductor.S`, and the left-singular vectors from `pod_reductor.V` (note that left-singular vectors are usually denoted with ``U``, but we use ``V`` to stick with RB notation).
 
 ### Strong Greedy Algorithm
 
@@ -177,14 +178,15 @@ for i in 1:6
     u_approx = V * V' * S[:,idx]
     plot!(u_approx, c=colors[i], label=false, ls=:dash)
 end
-title!("Truth and projected QR solutions")
+title!("Truth and projected SG solutions")
 savefig(plt, "rbm_tut5.svg"); nothing # hide
 ```
 ![](rbm_tut5.svg)
 
 Now, we will use an `SGReductor` object to form a Galerkin-projected reduced order model.
 ```@example 1
-sg_reductor = SGReductor(model, S)
+sg_reductor = SGReductor(model)
+add_to_rb!(sg_reductor, S)
 sg_rom = form_rom(sg_reductor, r)
 plt = plot()
 for i in 1:6
@@ -195,12 +197,12 @@ for i in 1:6
     u_approx = lift(sg_reductor, u_r)
     plot!(u_approx, c=colors[i], label=false, ls=:dash)
 end
-title!("Truth and projected Galerkin QR solutions")
+title!("Truth and projected Galerkin SG solutions")
 savefig(plt, "rbm_tut6.svg"); nothing # hide
 ```
 ![](rbm_tut6.svg)
 
-This procedure also performs quite well. We may expect the POD algorithm to be a bit more accurate/general as it can choose basis elements that are not "in the columns" of ``S``. Similar to the `PODReductor` object, we can access the column pivoted QR decomposition in `sg_reductor.decomp` and the reduced basis in `sg_reductor.V`.
+This procedure also performs quite well. We may expect the POD algorithm to be a bit more accurate/general as it can choose basis elements that are not "in the columns" of ``S``. Similar to the `PODReductor` object, we can access the reduced basis from `sg_reductor.V`.
 
 ### Weak Greedy Algorithm
 
@@ -247,7 +249,7 @@ for i in 1:6
     u_approx = lift(wg_reductor, u_r)
     plot!(u_approx, c=colors[i], label=false, ls=:dash)
 end
-title!("Truth and weak greedy solutions")
+title!("Truth and WG solutions")
 savefig(plt, "rbm_tut7.svg"); nothing # hide
 ```
 ![](rbm_tut7.svg)
