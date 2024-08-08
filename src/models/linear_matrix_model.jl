@@ -19,7 +19,7 @@ mutable struct LinearMatrixModel{NOUT} <: StationaryModel{NOUT}
     A_alloc::AbstractMatrix
     b_alloc::AbstractVector
     B_alloc::VectorOfVectors
-    fA::Union{Factorization, Nothing}
+    fA::Union{Factorization,AbstractMatrix,Number,Nothing}
     p_last
 end
 
