@@ -81,14 +81,14 @@ end
 `model = PenzlModel()`
 
 Generates the standard Penzl `LTIModel` with
-one input, one output, and 1006 dimension state variable.
+one input, one output, and `ns=1006` dimension state variable.
 """
-function PenzlModel()
+function PenzlModel(ns::Int=1006)
     matrices = [
         [-1 100; -100 -1],
         [-1 200; -200 -1],
         [-1 400; -400 -1],
-        spdiagm(-1:-1:-1000),
+        spdiagm(-1:-1:(-1*(ns-6))),
     ]
     N = sum(size(matrix,1) for matrix in matrices)
     A = spzeros(N,N)
@@ -110,7 +110,7 @@ end
 `model = MISOPenzlModel()`
 
 Generates an `LTIModel` with three inputs, one output, 
-and a state of dimension 1006. Same structure as the 
+and a state of dimension `ns=1006`. Same structure as the 
 Penzl model except the `B` matrix is changed to
 
 ```
@@ -132,12 +132,12 @@ Penzl model except the `B` matrix is changed to
   1.0   1.0   1.0
 ```
 """
-function MISOPenzlModel()
+function MISOPenzlModel(ns::Int=1006)
     matrices = [
         [-1 100; -100 -1],
         [-1 200; -200 -1],
         [-1 400; -400 -1],
-        spdiagm(-1:-1:-1000),
+        spdiagm(-1:-1:(-1*(ns-6))),
     ]
     N = sum(size(matrix,1) for matrix in matrices)
     A = spzeros(N,N)
@@ -165,37 +165,37 @@ end
 `model = ParameterizedPenzlModel()`
 
 Generates an `LTIModel` with one input, one output, 
-and a state of dimension 1006. Same structure as the 
+and a state of dimension `ns=1006`. Same structure as the 
 Penzl model, expect depends on a parameter vector of
 length 3 which shift the poles along the complex axis.
 Instantiate to a parameter vector by calling
 `model([p1,p2,p3])`.
 """
-function ParameterizedPenzlModel()
+function ParameterizedPenzlModel(ns::Int=1006)
     allmats = [
         [
             [-1 100; -100 -1],
             [-1 200; -200 -1],
             [-1 400; -400 -1],
-            spdiagm(-1:-1:-1000),
+            spdiagm(-1:-1:(-1*(ns-6))),
         ],
         [
             [0 1; -1 0],
             [0 0; 0 0],
             [0 0; 0 0],
-            0 .* spdiagm(-1:-1:-1000),
+            0 .* spdiagm(-1:-1:(-1*(ns-6))),
         ],
         [
             [0 0; 0 0],
             [0 1; -1 0],
             [0 0; 0 0],
-            0 .* spdiagm(-1:-1:-1000),
+            0 .* spdiagm(-1:-1:(-1*(ns-6))),
         ],
         [
             [0 0; 0 0],
             [0 0; 0 0],
             [0 1; -1 0],
-            0 .* spdiagm(-1:-1:-1000),
+            0 .* spdiagm(-1:-1:(-1*(ns-6))),
         ]
     ]
     N = sum(size(matrix,1) for matrix in allmats[1])

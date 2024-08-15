@@ -28,49 +28,29 @@ function LTIModel(A_in::Union{AbstractMatrix,APArray},
                   C_in::Union{AbstractMatrix,APArray}, 
                   D_in::Union{AbstractMatrix,APArray,Real}=0,
                   E_in::Union{UniformScaling,AbstractMatrix,APArray}=I)
-    (A, Ap) = begin 
-        if A_in isa APArray
-            T = typeof(prod(zero.(eltype.(A_in.arrays))))
-            (Matrix{T}(undef, size(A_in.arrays[1])), A_in)
+    arrs = Union{AbstractMatrix,UniformScaling}[]
+    aparrs = Union{APArray,Nothing}[]
+    for (i,mat_in) in enumerate((A_in, B_in, C_in, D_in, E_in))
+        if mat_in isa APArray
+            T = typeof(prod(zero.(eltype.(mat_in.arrays))))
+            if all(issparse.(mat_in.arrays))
+                push!(arrs, spzeros(T, size(mat_in.arrays[1])))
+            else
+                push!(arrs, Matrix{T}(undef, size(mat_in.arrays[1])))
+            end
+            push!(aparrs, mat_in)
+        elseif (i == 4) && mat_in isa Real
+            push!(arrs, mat_in .* ones(typeof(D_in), size(arrs[3], 1), size(arrs[2], 2)))
+            push!(aparrs, nothing)
+        elseif (i == 5) && mat_in isa UniformScaling
+            push!(arrs, mat_in)
+            push!(aparrs, nothing)
         else
-            (A_in, nothing)
+            push!(arrs, mat_in)
+            push!(aparrs, nothing)
         end
     end
-    (B, Bp) = begin 
-        if B_in isa APArray
-            T = typeof(prod(zero.(eltype.(B_in.arrays))))
-            (Matrix{T}(undef, size(B_in.arrays[1])), B_in)
-        else
-            (B_in, nothing)
-        end
-    end
-    (C, Cp) = begin 
-        if C_in isa APArray
-            T = typeof(prod(zero.(eltype.(C_in.arrays))))
-            (Matrix{T}(undef, size(C_in.arrays[1])), C_in)
-        else
-            (C_in, nothing)
-        end
-    end
-    (D, Dp) = begin 
-        if D_in isa APArray
-            T = typeof(prod(zero.(eltype.(D_in.arrays))))
-            (Matrix{T}(undef, size(D_in.arrays[1])), D_in)
-        elseif D_in isa Real
-            (D_in .* ones(typeof(D_in), size(C, 1), size(B, 2)), nothing)
-        else
-            (D_in, nothing)
-        end
-    end
-    (E, Ep) = begin 
-        if E_in isa APArray
-            T = typeof(prod(zero.(eltype.(E_in.arrays))))
-            (Matrix{T}(undef, size(E_in.arrays[1])), E_in)
-        else
-            (E_in, nothing)
-        end
-    end
-    return LTIModel(A, B, C, D, E, Ap, Bp, Cp, Dp, Ep)
+    return LTIModel(arrs..., aparrs...)
 end
 
 function LTIModel(lti::AbstractStateSpace)
@@ -131,6 +111,46 @@ function output_type(model::LTIModel)
     T2 = eltype(model.B)
     T3 = eltype(model.E)
     return typeof(zero(T1) * zero(T2) * zero(T3))
+end
+
+function is_parameterized(model::LTIModel)
+    return !(isnothing(model.Ap) &&
+             isnothing(model.Bp) && 
+             isnothing(model.Cp) &&
+             isnothing(model.Dp) &&
+             isnothing(model.Ep))
+end
+
+"""
+`bode(model::LTIModel, ω::Real[, p=nothing])`
+
+Returns the transfer function evaluated at `s=im*ω`,
+`C * (sE - A)^(-1) B + D`.
+"""
+function bode(model::LTIModel, ω::Real, p=nothing; first=true)
+    if !isnothing(p)
+        model(p)
+    end
+    s = ω*im
+    res = model.C * ((s*model.E - model.A) \ model.B) .+ model.D
+    if first
+        return res[1,1]
+    else
+        return res
+    end
+end
+
+"""
+`bode(model::LTIModel, ωs::Real[, p=nothing])`
+
+Returns the transfer function evaluated at `s=im*ω`
+for `ω in ωs`.
+"""
+function bode(model::LTIModel, ωs::AbstractVector{<:Real}, p=nothing; first=true)
+    if !isnothing(p)
+        model(p)
+    end
+    return [bode(model, ω, first=first) for ω in ωs]
 end
 
 function f_lti(dx, x, p, t)

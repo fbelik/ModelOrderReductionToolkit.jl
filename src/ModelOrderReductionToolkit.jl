@@ -4,6 +4,7 @@ using ControlSystems: ss, AbstractStateSpace
 using DescriptorSystems: dss, AbstractDescriptorStateSpace
 using JuMP
 using LinearAlgebra
+using MatrixEquations: plyapc
 using NearestNeighbors
 using OrdinaryDiffEq: ODEProblem
 using Printf
@@ -19,6 +20,7 @@ include("vector_of_vectors.jl")
 include("successive_constraint.jl")
 include("stability_radial_basis.jl")
 include("residual_norm.jl")
+include("lradi.jl")
 include("models/model.jl")
 include("models/linear_model.jl")
 include("models/linear_matrix_model.jl")
@@ -27,6 +29,7 @@ include("models/built_in.jl")
 include("reductors/pod.jl")
 include("reductors/strong_greedy.jl")
 include("reductors/weak_greedy.jl")
+include("reductors/bt.jl")
 # Linear Algebra exports
 export svd
 export qr
@@ -59,6 +62,7 @@ export add_col_to_V!
 export LinearModel
 export LinearMatrixModel
 export LTIModel
+export bode
 export to_frequency_domain
 export to_ode_problem
 export to_ss
@@ -80,5 +84,6 @@ export galerkin_project
 export galerkin_add!
 export output_length
 export output_type
+export BTReductor
 
 end
