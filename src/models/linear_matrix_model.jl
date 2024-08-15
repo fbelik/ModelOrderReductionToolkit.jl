@@ -4,7 +4,7 @@
 ```
 model = LinearMatrixModel(Ap::APArray, bps::AbstractVector{Union{APArray, <:AbstractVector}})
 model = LinearMatrixModel(Ap::APArray, Bp::APArray)
-model = LinearMatrixModel(models::AbstractVector{LinearModel})
+model = LinearMatrixModel(Ap::APArray, B::AbstractMatrix)
 ```
 
 Struct for containing a parameterized linear model

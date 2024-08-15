@@ -77,6 +77,7 @@ reductor = WGReductor(model, estimator)
 add_to_rb!(reductor, params, 10)
 rom = form_rom(reductor, 10)
 ```
+See sources 1-3 on more information on successive constraint methods, residual computations, and methodology on weak greedy reduced basis methods.
 
 ## Nonstationary Models
 
@@ -94,15 +95,26 @@ y(t;p) = C(p) x(t;p) + D(p) u(t)
 LTIModel
 ```
 
-Also implements `to_ss(model[, p=nothing])` to convert a model to a `ControlSystems.jl` state space, and `to_dss(model[, p=nothing])` to convert to a `DescriptorSystems.jl`. Also implements `to_frequency_domain(model)` which returns a `LinearMatrixModel` to solve for the state variable `x` in the frequency domain. Also has `galerkin_project(model, V[, W=V; r=-1])` implemented for forming reduced order models. To cast to an ODE problem for a given input `u(x)`, call `to_ode_problem(model[, x0=0.0, tspan=(0,1), p=nothing, u])
+Also implements `to_ss(model[, p=nothing])` to convert a model to a `ControlSystems.jl` state space, and `to_dss(model[, p=nothing])` to convert to a `DescriptorSystems.jl`. Also implements `to_frequency_domain(model)` which returns a `LinearMatrixModel` to solve for the state variable `x` in the frequency domain. Also has `galerkin_project(model, V[, W=V; r=-1])` implemented for forming reduced order models. To cast to an ODE problem for a given input `u(x)`, call `to_ode_problem(model[, x0=0.0, tspan=(0,1), p=nothing, u])`.
 
-The state of the art method for reducing a non-parameterized LTI problem is through balanced truncation. This can currently be done in `DescriptorSystems.jl`. (Goal of implementing a faster iterative solver here)
+### BT Reductor
+
+The state of the art method for reducing a non-parameterized LTI problem is through balanced truncation. This can be performed with a `BTReductor` object.
+```@docs
+BTReductor
+```
+
+After forming a `BTReductor` object on an `LTIModel`, can obtain the system Gramians through `reachability_gramian(reductor)` and `observability_gramian(reductor)`. As with other reductors, has `form_rom` and `lift` implemented.
+
 ```julia
 model = PenzlModel()
-sys = to_dss(model)
-sys_r, hs = gbalmr(sys; balance=true) # Returns a reduced system and HSVs
-rom = LTIModel(sys_r)
+reductor = BTReductor(model)
+rom = form_rom(reductor, 20)
 ```
+
+See source 4 for more information on the iterative method for solving Lyapunov equations used by `BTReductor` when `iterative==true`, and see `MatrixEquations.jl` for the non-sparse Lyapunov solver. See source 5 for the Penzl model example and for more information on truncation of LTI systems.
+
+### RB Reduction
 
 For reducing a parameterized LTI problem in a reduced basis setting, one option is to create a (complex) basis in the frequency domain.
 
@@ -115,3 +127,10 @@ reductor = PODReductor(freq_model)
 add_to_rb!(reductor, params)
 rom = galerkin_project(model, Matrix(reductor.V[:,1:20])) # Faster when converting from VOV to Matrix
 ```
+
+### References:
+1. D.B.P. Huynh, G. Rozza, S. Sen, A.T. Patera. A successive constraint linear optimization method for lower bounds of parametric coercivity and inf–sup stability constants. Comptes Rendus Mathematique. Volume 345, Issue 8. 2007. Pages 473-478. https://doi.org/10.1016/j.crma.2007.09.019.
+2. Quarteroni, Alfio, Andrea Manzoni, and Federico Negri. Reduced Basis Methods for Partial Differential Equations. Vol. 92. UNITEXT. Cham: Springer International Publishing, 2016. http://link.springer.com/10.1007/978-3-319-15431-2.
+3. Yanlai Chen, Jiang Jiahua, and Akil Narayan. A robust error estimator and a residual-free error indicator for reduced basis methods. Computers & Mathematics with Applications. 2019. http://www.sciencedirect.com/science/article/pii/S0898122118306850
+4. Patrick Kürschner and Peter Benner. Efficient low-rank solutions of large-scale matrix equations. Forschungsberichte aus dem Max-Planck-Institut für Dynamik Komplexer Technischer Systeme. 2016. https://pure.mpg.de/rest/items/item_2246796_7/component/file_2296741/content.
+5. Thilo Penzl. Algorithms for model reduction of large dynamical systems. Linear Algebra and its Applications. Volume 415, Issue 2, Pages 322-343. June 1, 2006. https://www.sciencedirect.com/science/article/pii/S0024379506000371.
