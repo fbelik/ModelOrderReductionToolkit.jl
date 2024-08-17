@@ -252,9 +252,13 @@ function to_frequency_domain(model::LTIModel) # TODO: Add Re(s) != 0 argument?
 end
 
 """
-`galerkin_project(model, V[, W=V, ])`
+`galerkin_project(model, V[, W=V; WTEVisI=false, r=-1])`
+
+Performs Galerkin projection on the `model <: LTIModel` and
+returns a new `LTIModel`. By default, assumes that `WᵀV=I`,
+if `WTEVisI==true`, then assumes that `WᵀEV=I`.
 """
-function galerkin_project(model::LTIModel, V::AbstractMatrix, W::AbstractMatrix=V; r=-1)
+function galerkin_project(model::LTIModel, V::AbstractMatrix, W::AbstractMatrix=V; WTEVisI=false, r=-1)
     N, n = size(V)
     if 0 < r && r < min(N, n)
         V = view(V, 1:N, 1:r)
@@ -298,7 +302,9 @@ function galerkin_project(model::LTIModel, V::AbstractMatrix, W::AbstractMatrix=
     
     E_in = begin
         if isnothing(model.Ep)
-            if isa(model.E, UniformScaling)
+            if isa(model.E, UniformScaling) && WTEVisI
+                I
+            elseif isa(model.E, UniformScaling) # WᵀEV = EWᵀV = E
                 model.E
             else
                 VectorOfVectors(W' * model.E * V)

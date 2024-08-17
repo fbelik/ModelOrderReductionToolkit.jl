@@ -102,7 +102,7 @@ of order `r` (largest possible if `r==-1`). Also,
 initializes it to `bt_reductor.p` if not nothing.
 """
 function form_rom(bt_reductor::BTReductor, r=-1)
-    rom = galerkin_project(bt_reductor.model, bt_reductor.V, bt_reductor.W, r=r)
+    rom = galerkin_project(bt_reductor.model, bt_reductor.V, bt_reductor.W, WTEVisI=true, r=r)
     if !isnothing(bt_reductor.p)
         rom(bt_reductor.p)
     end
