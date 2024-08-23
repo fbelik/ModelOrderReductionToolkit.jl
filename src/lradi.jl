@@ -1,6 +1,7 @@
 """
 Find a low rank solution for the generalized continuous-time Lyapunov equation 
-`AXE' + EXA' = -FF'`. Returns a matrix `Z` such that `X ≈ ZZ'`.
+`AXE' + EXA' = -FF'`. Returns a matrix `Z` such that `X ≈ ZZ'`. Inspired by
+Kürschner and Benner 2016 and PyMOR implementation.
 """
 function glyap_lradi_r(A::AbstractMatrix, E::Union{AbstractMatrix,UniformScaling}, B::AbstractVecOrMat; eps=1e-2, maxdim=-1, noise=1)
     W = copy(B)

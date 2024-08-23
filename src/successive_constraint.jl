@@ -18,7 +18,7 @@ struct SCM_Init <: Function
     tree::NNTree
     tree_lookup::AbstractVector{Int}
     B::AbstractVector{Tuple{Float64,Float64}}
-    C::AbstractVector{<:AbstractVector}
+    C::AbstractVector{<:AbstractVector} # TODO: Allow for numeric parameters
     C_indices::Vector{Int}
     Mα::Int
     Mp::Int
@@ -47,13 +47,13 @@ function Base.show(io::Core.IO, scm::SCM_Init)
 end
 
 """
-`(scm_init::SCM_Init)(p::AbstractVector; noise=0)`
+`(scm_init::SCM_Init)(p::Union{AbstractVector,Number}; noise=0)`
 
 Method that performs the online phase of SCM for the matrix
 `A(p) = ∑ makeθAi(p,i) Ais[i]` to compute a lower-bound
 approximation to the minimum singular value of `A`.
 """
-function (scm_init::SCM_Init)(p::AbstractVector; noise=0)
+function (scm_init::SCM_Init)(p::Union{AbstractVector,Number}; noise=0) 
     # Find lower bound through linear program
     σ_LB, _ = solve_LBs_LP(scm_init, p, noise=noise)
     # In case of round error
@@ -74,8 +74,7 @@ singular value (stability factor) of `A(p)`.
 
 Parameters:
 
-`param_disc`: Either a matrix where each column is a parameter
-value in the discretization, or a vector of parameter vectors.
+`param_disc`: A vector of parameters.
 
 `Ap`: APArray object that stores the affine parameter dependence
 of the matrix `A(p) = ∑ makeθAi(p,i) Ais[i]`
@@ -96,7 +95,7 @@ displayed; default 1.
 `lp_attrs`: A dicitonary of attributes to set for the linear program with the given
 optimizer.
 """
-function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
+function initialize_SCM_SPD(param_disc::AbstractVector,
                             Ap::APArray,
                             Mα::Int,
                             Mp::Int,
@@ -108,21 +107,22 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
                                 "IPM_IterationsLimit"=>1000, 
                                 "IPM_TimeLimit"=>5.0)
                             )
-    T = typeof(prod(zero.(eltype.(Ap.arrays))))
+    T = typeof(prod(zero.(eltype.(Ap.arrays)))) # TODO: Allow for numeric parameters
     V = VectorOfVectors(size(Ap.arrays[1], 1), 0, T)
     Ais = Ap.arrays
     makeθAi = Ap.makeθi
     # Form data tree to search for nearest neighbors
-    if typeof(param_disc) <: Vector
-        eltype_param = eltype(param_disc)
+    if noise >= 2
+        println("Forming KD Tree for SCM")
+    end
+    p_len = length(param_disc[1])
+    param_disc = begin
         try
-            # Check if param eltype has method length
-            length(eltype_param)
-            # Check if param eleltype has method zero
-            eleltype_param = eltype(eltype_param)
-            zero(eltype_param)
+            # See if eltype has length attribute
+            length(eltype(param_disc))
+            param_disc
         catch
-            param_disc = reduce(hcat, param_disc)
+            [SVector{p_len,Float64}(p...) for p in param_disc]
         end
     end
     tree = KDTree(param_disc)
@@ -136,6 +136,9 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
     QA = length(Ais)
     # Real numerical range of A equals real numerical range of (1/2)(A+A^T)
     B = Tuple{Float64,Float64}[]
+    if noise >= 2
+        println("Forming bounding boxes by forming smallest and largest real eigenvalues")
+    end
     Ais_herm = []
     for i in 1:QA
         A = 0.5 .* (Ais[i] .+ Ais[i]')
@@ -143,6 +146,9 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
         mineig = smallest_real_eigval(A, kmaxiter, noise)
         maxeig = largest_real_eigval(A, kmaxiter, noise)
         push!(B, (mineig, maxeig))
+    end
+    if noise >= 2
+        println("Finished forming bounding boxes, forming upperbound set")
     end
     # Linear program resizing constant
     R = 0.0
@@ -191,7 +197,7 @@ function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
 end
 
 # Deprecated for calling with APArray
-function initialize_SCM_SPD(param_disc::Union{Matrix,Vector},
+function initialize_SCM_SPD(param_disc::AbstractVector,
                             Ais::AbstractVector,
                             makeθAi::Function,
                             Mα::Int,
@@ -240,7 +246,7 @@ displayed; default 1.
 `lp_attrs`: A dicitonary of attributes to set for the linear program with the given
 optimizer.
 """
-function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
+function initialize_SCM_Noncoercive(param_disc::AbstractVector,
                                     Ap::APArray,
                                     Mα::Int,
                                     Mp::Int,
@@ -256,11 +262,18 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
     Ais = Ap.arrays
     makeθAi = Ap.makeθi
     # Form data tree to search for nearest neighbors
-    if typeof(param_disc) <: Vector
-        param_disc = reduce(hcat, param_disc)
-    end
     if noise >= 2
         println("Forming KD Tree for SCM")
+    end
+    p_len = length(param_disc[1])
+    param_disc = begin
+        try
+            # See if eltype has length attribute
+            length(eltype(param_disc))
+            param_disc
+        catch
+            [SVector{p_len,Float64}(p...) for p in param_disc]
+        end
     end
     tree = KDTree(param_disc)
     tree_lookup = zeros(Int, length(tree.data))
@@ -347,7 +360,7 @@ function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
 end
 
 # Deprecated for calling with APArray
-function initialize_SCM_Noncoercive(param_disc::Union{Matrix,Vector},
+function initialize_SCM_Noncoercive(param_disc::AbstractVector,
                                     Ais::AbstractVector,
                                     makeθAi::Function,
                                     Mα::Int,
@@ -371,7 +384,7 @@ Helper method that takes in an `SCM_Init_SPD` object and a parameter vector
 `p`, and sets up and solves a linear program to compute a lower-bound
 `σ_LB` to the minimum singular value of `A(p)` along with the associated vector `y_LB`.
 """
-function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector; noise=1)
+function solve_LBs_LP(scm_init::SCM_Init, p::Union{AbstractVector,Number}; noise=1)
     model = JuMP.Model(scm_init.optimizer)
     for (attr,value) in  scm_init.lp_attrs
         try
@@ -396,10 +409,11 @@ function solve_LBs_LP(scm_init::SCM_Init, p::AbstractVector; noise=1)
         @constraint(model, scm_init.J(p_c,y) >= ub / scm_init.R)
     end
     # Positivity Constraints
-    p_idxs, _ = knn(scm_init.tree, p, scm_init.Mp, true, i -> (i in scm_init.C_indices[C_NN_idxs]))
+    p_knn = isa(p, Number) ? MVector{1}(p) : p
+    p_idxs, _ = knn(scm_init.tree, p_knn, scm_init.Mp, true, i -> (i in scm_init.C_indices[C_NN_idxs]))
     tree_idx = scm_init.tree_lookup[p_idxs[1]]
     closest_p = scm_init.tree.data[tree_idx]
-    if scm_init.Mp >= 1 && closest_p == p
+    if scm_init.Mp >= 1 && (closest_p == p || (length(closest_p) == 1 && closest_p[1] == p[1]))
         @constraint(model, scm_init.J(p,y) >= scm_init.σ_LBs[tree_idx] / scm_init.R)
     else
         @constraint(model, scm_init.J(p,y) >= 0)
@@ -545,7 +559,7 @@ we know that not enough stability constraints were enforced, and
 the minimum singular value is directly computed, appended to the 
 scm_init's upper-bound set, and returned as both the lower and upper-bounds.
 """
-function find_sigma_bounds(scm_init::SCM_Init, p::AbstractVector, 
+function find_sigma_bounds(scm_init::SCM_Init, p::Union{AbstractVector,Number}, 
                            sigma_eps::Float64=1.0; noise=0)
     # Loop through Y_{UB} to find upper-bound
     σ_UB = Inf

@@ -122,10 +122,10 @@ function is_parameterized(model::LTIModel)
 end
 
 """
-`bode(model::LTIModel, ω::Real[, p=nothing])`
+`bode(model::LTIModel, ω::Real[, p=nothing; first=true])`
 
 Returns the transfer function evaluated at `s=im*ω`,
-`C * (sE - A)^(-1) B + D`.
+`C * (sE - A)^(-1) B + D`, evaluated at the `[1,1]` entry if `first==true`.
 """
 function bode(model::LTIModel, ω::Real, p=nothing; first=true)
     if !isnothing(p)
@@ -141,16 +141,16 @@ function bode(model::LTIModel, ω::Real, p=nothing; first=true)
 end
 
 """
-`bode(model::LTIModel, ωs::Real[, p=nothing])`
+`bode(model::LTIModel, ωs::AbstractVector{<:Union{AbstractVector,Real}}[, p=nothing; first=true])`
 
 Returns the transfer function evaluated at `s=im*ω`
-for `ω in ωs`.
+for `ω in ωs`, evaluated at the `[1,1]` entry if `first==true`.
 """
-function bode(model::LTIModel, ωs::AbstractVector{<:Real}, p=nothing; first=true)
+function bode(model::LTIModel, ωs::AbstractVector{<:Union{AbstractVector,Real}}, p=nothing; first=true)
     if !isnothing(p)
         model(p)
     end
-    return [bode(model, ω, first=first) for ω in ωs]
+    return [bode(model, ω[1], first=first) for ω in ωs]
 end
 
 function f_lti(dx, x, p, t)
@@ -252,9 +252,13 @@ function to_frequency_domain(model::LTIModel) # TODO: Add Re(s) != 0 argument?
 end
 
 """
-`galerkin_project(model, V[, W=V, ])`
+`galerkin_project(model, V[, W=V; WTEVisI=false, r=-1])`
+
+Performs Galerkin projection on the `model <: LTIModel` and
+returns a new `LTIModel`. By default, assumes that `WᵀV=I`,
+if `WTEVisI==true`, then assumes that `WᵀEV=I`.
 """
-function galerkin_project(model::LTIModel, V::AbstractMatrix, W::AbstractMatrix=V; r=-1)
+function galerkin_project(model::LTIModel, V::AbstractMatrix, W::AbstractMatrix=V; WTEVisI=false, r=-1)
     N, n = size(V)
     if 0 < r && r < min(N, n)
         V = view(V, 1:N, 1:r)
@@ -298,7 +302,9 @@ function galerkin_project(model::LTIModel, V::AbstractMatrix, W::AbstractMatrix=
     
     E_in = begin
         if isnothing(model.Ep)
-            if isa(model.E, UniformScaling)
+            if isa(model.E, UniformScaling) && WTEVisI
+                I
+            elseif isa(model.E, UniformScaling) # WᵀEV = EWᵀV = E
                 model.E
             else
                 VectorOfVectors(W' * model.E * V)
