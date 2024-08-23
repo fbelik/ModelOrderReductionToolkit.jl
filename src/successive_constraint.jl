@@ -47,13 +47,13 @@ function Base.show(io::Core.IO, scm::SCM_Init)
 end
 
 """
-`(scm_init::SCM_Init)(p::AbstractVector; noise=0)`
+`(scm_init::SCM_Init)(p::Union{AbstractVector,Number}; noise=0)`
 
 Method that performs the online phase of SCM for the matrix
 `A(p) = ∑ makeθAi(p,i) Ais[i]` to compute a lower-bound
 approximation to the minimum singular value of `A`.
 """
-function (scm_init::SCM_Init)(p; noise=0) 
+function (scm_init::SCM_Init)(p::Union{AbstractVector,Number}; noise=0) 
     # Find lower bound through linear program
     σ_LB, _ = solve_LBs_LP(scm_init, p, noise=noise)
     # In case of round error
@@ -384,7 +384,7 @@ Helper method that takes in an `SCM_Init_SPD` object and a parameter vector
 `p`, and sets up and solves a linear program to compute a lower-bound
 `σ_LB` to the minimum singular value of `A(p)` along with the associated vector `y_LB`.
 """
-function solve_LBs_LP(scm_init::SCM_Init, p; noise=1)
+function solve_LBs_LP(scm_init::SCM_Init, p::Union{AbstractVector,Number}; noise=1)
     model = JuMP.Model(scm_init.optimizer)
     for (attr,value) in  scm_init.lp_attrs
         try
@@ -409,7 +409,8 @@ function solve_LBs_LP(scm_init::SCM_Init, p; noise=1)
         @constraint(model, scm_init.J(p_c,y) >= ub / scm_init.R)
     end
     # Positivity Constraints
-    p_idxs, _ = knn(scm_init.tree, p, scm_init.Mp, true, i -> (i in scm_init.C_indices[C_NN_idxs]))
+    p_knn = isa(p, Number) ? MVector{1}(p) : p
+    p_idxs, _ = knn(scm_init.tree, p_knn, scm_init.Mp, true, i -> (i in scm_init.C_indices[C_NN_idxs]))
     tree_idx = scm_init.tree_lookup[p_idxs[1]]
     closest_p = scm_init.tree.data[tree_idx]
     if scm_init.Mp >= 1 && (closest_p == p || (length(closest_p) == 1 && closest_p[1] == p[1]))
@@ -558,7 +559,7 @@ we know that not enough stability constraints were enforced, and
 the minimum singular value is directly computed, appended to the 
 scm_init's upper-bound set, and returned as both the lower and upper-bounds.
 """
-function find_sigma_bounds(scm_init::SCM_Init, p, 
+function find_sigma_bounds(scm_init::SCM_Init, p::Union{AbstractVector,Number}, 
                            sigma_eps::Float64=1.0; noise=0)
     # Loop through Y_{UB} to find upper-bound
     σ_UB = Inf
