@@ -122,10 +122,10 @@ function is_parameterized(model::LTIModel)
 end
 
 """
-`bode(model::LTIModel, ω::Real[, p=nothing])`
+`bode(model::LTIModel, ω::Real[, p=nothing; first=true])`
 
 Returns the transfer function evaluated at `s=im*ω`,
-`C * (sE - A)^(-1) B + D`.
+`C * (sE - A)^(-1) B + D`, evaluated at the `[1,1]` entry if `first==true`.
 """
 function bode(model::LTIModel, ω::Real, p=nothing; first=true)
     if !isnothing(p)
@@ -141,16 +141,16 @@ function bode(model::LTIModel, ω::Real, p=nothing; first=true)
 end
 
 """
-`bode(model::LTIModel, ωs::Real[, p=nothing])`
+`bode(model::LTIModel, ωs::AbstractVector{<:Union{AbstractVector,Real}}[, p=nothing; first=true])`
 
 Returns the transfer function evaluated at `s=im*ω`
-for `ω in ωs`.
+for `ω in ωs`, evaluated at the `[1,1]` entry if `first==true`.
 """
-function bode(model::LTIModel, ωs::AbstractVector{<:Real}, p=nothing; first=true)
+function bode(model::LTIModel, ωs::AbstractVector{<:Union{AbstractVector,Real}}, p=nothing; first=true)
     if !isnothing(p)
         model(p)
     end
-    return [bode(model, ω, first=first) for ω in ωs]
+    return [bode(model, ω[1], first=first) for ω in ωs]
 end
 
 function f_lti(dx, x, p, t)
