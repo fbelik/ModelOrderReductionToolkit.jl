@@ -123,5 +123,5 @@ function lift(pod_reductor::PODReductor, x_r::AbstractVector)
     r = length(x_r)
     V = pod_reductor.V
     N, M = size(V)
-    return view(V, 1:N, 1:r) * x_r
+    return view(Matrix(V), 1:N, 1:r) * x_r
 end

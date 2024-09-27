@@ -18,7 +18,7 @@ end
 
 function LinearModel(Ap::APArray, bp::APArray)
     TA = typeof(prod(zero.(eltype.(Ap.arrays))))
-    A_alloc = Matrix{TA}(undef, size(Ap.arrays[1]))
+    A_alloc = all(issparse.(Ap.arrays)) ? spzeros(TA, size(Ap.arrays[1])) : Matrix{TA}(undef, size(Ap.arrays[1]))
     Tb = typeof(prod(zero.(eltype.(bp.arrays))))
     b_alloc = Vector{TA}(undef, size(bp.arrays[1]))
     return LinearModel(Ap, bp, A_alloc, b_alloc)

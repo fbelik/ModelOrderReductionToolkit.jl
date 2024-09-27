@@ -177,7 +177,7 @@ function smallest_sval(A::AbstractMatrix, kmaxiter, noise=1)
     # Try invert around 0
     try
         res = eigs(AtA, which=:LM, sigma=0, nev=1, ritzvec=false, maxiter=kmaxiter)
-        return real(res[1][1])
+        return sqrt(max(0,real(res[1][1])))
     catch e
         if !(isa(e,Arpack.XYAUPD_Exception) || isa(e, ZeroPivotException))
             # Did not converge
@@ -192,7 +192,7 @@ function smallest_sval(A::AbstractMatrix, kmaxiter, noise=1)
         end
         # Perform brute eigen
         res = eigen!(issparse(AtA) ? collect(AtA) : AtA, sortby=real)
-        return minimum(real.(res.values))
+        return sqrt(max(0,minimum(real.(res.values))))
     end
 end
 
