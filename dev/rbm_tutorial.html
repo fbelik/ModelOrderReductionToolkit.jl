@@ -17,18 +17,18 @@ S</code></pre><pre class="documenter-example-output"><code class="nohighlight hl
  0.0062375   0.00626902  0.00630066     0.00875012  0.00897341  0.00932075
  0.00935625  0.00939663  0.00943717     0.0130561   0.0133798   0.0138881
  0.012475    0.0125197   0.0125646      0.0173173   0.0177345   0.0183955
- 0.0155938   0.0156382   0.0156829      0.0215346   0.0220386   0.0228448
+ 0.0155937   0.0156382   0.0156829      0.0215346   0.0220386   0.0228448
  0.0187125   0.0187521   0.0187922   …  0.0257091   0.0262933   0.0272374
- 0.0218313   0.0218615   0.0218926      0.0298417   0.0304999   0.0315747
+ 0.0218312   0.0218615   0.0218926      0.0298417   0.0304999   0.0315747
  0.02495     0.0249665   0.0249841      0.0339331   0.0346595   0.0358584
- 0.0280688   0.028067    0.0280669      0.0379844   0.0387732   0.0400897
+ 0.0280687   0.028067    0.0280669      0.0379844   0.0387732   0.0400897
  0.0311875   0.031163    0.0311409      0.0419963   0.042842    0.04427
  ⋮                                   ⋱                          
- 0.0280688   0.0280714   0.0280739   …  1.01719     1.01617     1.01454
+ 0.0280687   0.0280714   0.0280739   …  1.01719     1.01617     1.01454
  0.02495     0.0249339   0.0249174      1.01519     1.01428     1.01282
- 0.0218313   0.021801    0.0217702      1.01321     1.01241     1.01114
+ 0.0218312   0.021801    0.0217702      1.01321     1.01241     1.01114
  0.0187125   0.0186728   0.0186323      1.01126     1.01057     1.00948
- 0.0155938   0.0155492   0.0155039      1.00933     1.00875     1.00784
+ 0.0155937   0.0155492   0.0155039      1.00933     1.00875     1.00784
  0.012475    0.0124301   0.0123847   …  1.00742     1.00696     1.00623
  0.00935625  0.00931572  0.00927472     1.00554     1.00518     1.00464
  0.0062375   0.0062059   0.006174       1.00367     1.00343     1.00307
@@ -146,12 +146,12 @@ println(&quot;SG mean error: $(sum(errors[2]) / length(errors[2]))&quot;)
 println(&quot;SG worst error: $(maximum(errors[2]))&quot;)
 println(&quot;WG mean error: $(sum(errors[3]) / length(errors[3]))&quot;)
 println(&quot;WG worst error: $(maximum(errors[3]))&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Errors for RB dimension r=5
-POD mean error: 0.16333953592206588
-POD worst error: 0.4341530046750684
-SG mean error: 0.4434598097105646
-SG worst error: 0.9329683303719419
-WG mean error: 0.40967075796855373
-WG worst error: 1.004541382449191</code></pre><p>Let&#39;s repeat the process for a reduced basis of dimension <span>$r=15$</span> Let&#39;s compare the above algorithms by comparing their average and worst case accuracy over the parameter set.</p><pre><code class="language-julia hljs">oldr = r
+POD mean error: 0.16333953592214007
+POD worst error: 0.4341530046792675
+SG mean error: 0.44345980971500676
+SG worst error: 0.9329683303798562
+WG mean error: 0.40967075797445734
+WG worst error: 1.0045413824449583</code></pre><p>Let&#39;s repeat the process for a reduced basis of dimension <span>$r=15$</span> Let&#39;s compare the above algorithms by comparing their average and worst case accuracy over the parameter set.</p><pre><code class="language-julia hljs">oldr = r
 r = 15
 pod_rom = form_rom(pod_reductor, r)
 sg_rom = form_rom(sg_reductor, r)
@@ -179,13 +179,13 @@ println(&quot;WG worst error: $(maximum(errors[3]))&quot;)</code></pre><pre clas
 (10) truth error = 8.3097e-02, upperbound error = 1.4242e+01
 (11) truth error = 1.7457e-01, upperbound error = 1.0368e+01
 (12) truth error = 5.4074e-02, upperbound error = 7.8470e+00
-(13) truth error = 1.7132e-02, upperbound error = 4.4757e+00
+(13) truth error = 1.7132e-02, upperbound error = 4.4919e+00
 (14) truth error = 2.1617e-02, upperbound error = 4.7548e+00
 (15) truth error = 1.8859e-02, upperbound error = 3.3648e+00
 Errors for RB dimension r=15
-POD mean error: 0.0028622298638518204
-POD worst error: 0.008770724351391338
-SG mean error: 0.004122120213871156
-SG worst error: 0.011261695405919285
-WG mean error: 0.003900508300378061
-WG worst error: 0.012672536651311806</code></pre><p>In conclusion, the weak greedy algorithm takes advantage of the affine parameter dependence of <span>$A(p)$</span> and <span>$b(p)$</span>, and uses an upper-bound error approximator to produce a reduced basis that approximates solutions with comparable error compared to the strong greedy algorithm and the POD algorithm without needing to compute all solutions ahead of time.</p><h3 id="References:"><a class="docs-heading-anchor" href="#References:">References:</a><a id="References:-1"></a><a class="docs-heading-anchor-permalink" href="#References:" title="Permalink"></a></h3><ol><li>D.B.P. Huynh, G. Rozza, S. Sen, A.T. Patera. A successive constraint linear optimization method for lower bounds of parametric coercivity and inf–sup stability constants. Comptes Rendus Mathematique. Volume 345, Issue 8. 2007. Pages 473-478. https://doi.org/10.1016/j.crma.2007.09.019.</li><li>Quarteroni, Alfio, Andrea Manzoni, and Federico Negri. Reduced Basis Methods for Partial Differential Equations. Vol. 92. UNITEXT. Cham: Springer International Publishing, 2016. http://link.springer.com/10.1007/978-3-319-15431-2.</li></ol></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="index.html">« Models and Reductors</a><a class="docs-footer-nextpage" href="docs.html">Additional Docstrings »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.6.0 on <span class="colophon-date" title="Friday 23 August 2024 23:19">Friday 23 August 2024</span>. Using Julia version 1.10.4.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+POD mean error: 0.0028622298640957862
+POD worst error: 0.008770724354275776
+SG mean error: 0.004122120215064259
+SG worst error: 0.01126169540472911
+WG mean error: 0.0039005083006306038
+WG worst error: 0.012672536648931398</code></pre><p>In conclusion, the weak greedy algorithm takes advantage of the affine parameter dependence of <span>$A(p)$</span> and <span>$b(p)$</span>, and uses an upper-bound error approximator to produce a reduced basis that approximates solutions with comparable error compared to the strong greedy algorithm and the POD algorithm without needing to compute all solutions ahead of time.</p><h3 id="References:"><a class="docs-heading-anchor" href="#References:">References:</a><a id="References:-1"></a><a class="docs-heading-anchor-permalink" href="#References:" title="Permalink"></a></h3><ol><li>D.B.P. Huynh, G. Rozza, S. Sen, A.T. Patera. A successive constraint linear optimization method for lower bounds of parametric coercivity and inf–sup stability constants. Comptes Rendus Mathematique. Volume 345, Issue 8. 2007. Pages 473-478. https://doi.org/10.1016/j.crma.2007.09.019.</li><li>Quarteroni, Alfio, Andrea Manzoni, and Federico Negri. Reduced Basis Methods for Partial Differential Equations. Vol. 92. UNITEXT. Cham: Springer International Publishing, 2016. http://link.springer.com/10.1007/978-3-319-15431-2.</li></ol></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="index.html">« Models and Reductors</a><a class="docs-footer-nextpage" href="docs.html">Additional Docstrings »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.7.0 on <span class="colophon-date" title="Friday 27 September 2024 02:15">Friday 27 September 2024</span>. Using Julia version 1.10.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
