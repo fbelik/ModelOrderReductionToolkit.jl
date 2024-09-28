@@ -60,7 +60,7 @@ function add_to_rb!(sg_reductor::SGReductor, snapshots::AbstractMatrix; noise=1)
     end
     decomp = qr(sg_reductor.snapshots, ColumnNorm())
     sg_reductor.V .= decomp.Q[:, 1:min(size(sg_reductor.snapshots, 2),output_length(sg_reductor.model))]
-    sg_reductor.p .= decomp.p
+    sg_reductor.p .= decomp.p[eachindex(sg_reductor.p)]
     nothing
 end
 
@@ -88,13 +88,14 @@ function add_to_rb!(sg_reductor::SGReductor{NOUT}, parameters::AbstractVector; n
             end
             sg_reductor.snapshots[:,end] .= sg_reductor.model(p, j)
         end
+        push!(sg_reductor.parameters, p)
     end
     if noise >= 1
         println("Forming column-pivoted QR of snapshot matrix")
     end
     decomp = qr(sg_reductor.snapshots, ColumnNorm())
     sg_reductor.V .= decomp.Q[:, 1:min(size(sg_reductor.snapshots, 2),output_length(sg_reductor.model))]
-    sg_reductor.p .= decomp.p
+    sg_reductor.p .= decomp.p[eachindex(sg_reductor.p)]
     nothing
 end
 
