@@ -67,7 +67,7 @@ most negative (real) eigenvalue. First, uses Krylov iteration
 with a shift-invert procedure with Gershgorin disks, and if 
 not successful, calls a full, dense, eigensolve.
 """
-function smallest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, krylovsteps=10, shifttol=1e4)
+function smallest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, krylovsteps=10, shifttol=1e4, tol=1e-2)
     # Try invert method per Gershgorin disks
     mingd = 0.0
     mingd_center = 0.0
@@ -84,7 +84,7 @@ function smallest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, krylovsteps=
     exprange = unique(exp_tilde.(range(log_tilde(mingd), log_tilde(mingd_center), krylovsteps)))
     for sigma in exprange
         try
-            res = eigs(A, which=:LM, sigma=sigma, nev=1, ritzvec=false, maxiter=kmaxiter)
+            res = eigs(A, which=:LM, tol=tol, sigma=sigma, nev=1, ritzvec=false, maxiter=kmaxiter)
             return real(res[1][1])
         catch e
             if !(isa(e,Arpack.XYAUPD_Exception) || isa(e, ZeroPivotException))
@@ -116,10 +116,10 @@ most positive (real) eigenvalue. First, uses Krylov iteration
 with no shift-invert, and if not successful, calls a full, 
 dense, eigensolve.
 """
-function largest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1)
+function largest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, tol=1e-2)
     # Do not invert
     try
-        res = eigs(A, which=:LR, nev=1, ritzvec=false, maxiter=kmaxiter)
+        res = eigs(A, which=:LR, tol=tol, nev=1, ritzvec=false, maxiter=kmaxiter)
         return real(res[1][1])
     catch e
         if !isa(e,Arpack.XYAUPD_Exception)
@@ -143,10 +143,10 @@ with shift-invert around zero, and if not successful, calls a full,
 dense, eigensolve. Returns a tuple with the first component being the 
 eigenvalue, and the second component being the eigenvector.
 """
-function smallest_real_pos_eigpair(A::AbstractMatrix, kmaxiter, noise=1)
+function smallest_real_pos_eigpair(A::AbstractMatrix, kmaxiter, noise=1, tol=1e-2)
     # Try invert around 0
     try
-        res = eigs(A, which=:LM, sigma=0, nev=1, ritzvec=true, maxiter=kmaxiter)
+        res = eigs(A, which=:LM, tol=tol, sigma=0, nev=1, ritzvec=true, maxiter=kmaxiter)
         return (real(res[1][1]), view(res[2],:,1))
     catch e
         if !(isa(e,Arpack.XYAUPD_Exception) || isa(e, ZeroPivotException))
@@ -172,11 +172,11 @@ Given a matrix `A`, attempts to compute the smallest singular
 value of it by Krylov iteration and inversion around 0. If
 unsuccessful, computes a full, dense svd.
 """
-function smallest_sval(A::AbstractMatrix, kmaxiter, noise=1)
+function smallest_sval(A::AbstractMatrix, kmaxiter, noise=1, tol=1e-2)
     AtA = A'A
     # Try invert around 0
     try
-        res = eigs(AtA, which=:LM, sigma=0, nev=1, ritzvec=false, maxiter=kmaxiter)
+        res = eigs(AtA, which=:LM, tol=tol, sigma=0, nev=1, ritzvec=false, maxiter=kmaxiter)
         return sqrt(max(0,real(res[1][1])))
     catch e
         if !(isa(e,Arpack.XYAUPD_Exception) || isa(e, ZeroPivotException))
