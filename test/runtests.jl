@@ -71,7 +71,6 @@ end
     rom = form_rom(bt_reductor, r)
     omegas = range(-500,500,1001)
     bodeerr = abs.(bode(model, omegas, first=true) .- bode(rom, omegas, first=true))
-    println("Bode error for bt method - $(maximum(bodeerr))")
     @test maximum(bodeerr) < ERR_TOL
     # RB Method
     freq_model = to_frequency_domain(model)
@@ -83,7 +82,6 @@ end
     omegas = 10.0 .^ range(-2,3,1000)
     for p in [[0,0,0],[0,0,50],[40,-40,0],[10,15,-15]]
         bodeerr = abs.(bode(model, omegas, p, first=true) .- bode(rom, omegas, p, first=true))
-        println("Bode error for rb method at p=$p - $(maximum(bodeerr))")
         @test maximum(bodeerr) < ERR_TOL
     end
 end
