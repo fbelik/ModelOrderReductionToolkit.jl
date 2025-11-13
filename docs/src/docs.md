@@ -42,10 +42,11 @@ removeCol!
 
 ### Successive constraint method (SCM):
 ```@docs
-ModelOrderReductionToolkit.SCM_Init
-initialize_SCM_SPD
-initialize_SCM_Noncoercive
-find_sigma_bounds
+SPD_SCM
+ANLSCM
+NNSCM
+copy_scm
+constrain!
 ```
 
 ### Radial-basis interpolatory stability factor

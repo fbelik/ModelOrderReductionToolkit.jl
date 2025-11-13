@@ -4,7 +4,7 @@ Find a low rank solution for the generalized continuous-time Lyapunov equation
 Kürschner and Benner 2016 and PyMOR implementation.
 """
 function glyap_lradi_r(A::AbstractMatrix, E::Union{AbstractMatrix,UniformScaling}, B::AbstractVecOrMat; eps=1e-2, maxdim=-1, noise=1)
-    W = copy(B)
+    W = collect(B)
     E = isa(E, UniformScaling) ? Diagonal(E.λ * ones(size(A, 2))) : E
     Z = VectorOfVectors(size(A, 2), 0, Float64)
     Z_ortho = VectorOfVectors(size(A, 2), 0, Float64)

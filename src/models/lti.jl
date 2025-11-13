@@ -153,12 +153,10 @@ function bode(model::LTIModel, ωs::AbstractVector{<:Union{AbstractVector,Real}}
     return [bode(model, ω[1], first=first) for ω in ωs]
 end
 
-function f_lti(dx, x, p, t)
-    A, B, E, u = p
-    # dx .= E \ (A * x .+ B * u(t))
-    mul!(dx, A, x)
-    mul!(dx, B, u(t), 1, 1)
-    ldiv!(E, dx)
+function f_lti(dx, x, (model,u), t)
+    mul!(dx, model.A, x)
+    mul!(dx, model.B, u(t), 1, 1)
+    ldiv!(model.E, dx)
 end
 
 """
@@ -177,8 +175,10 @@ function to_ode_problem(model::LTIModel, p=nothing; u=(t->zeros(size(model.B, 2)
     if isa(x0, Number)
         x0 = x0 .* ones(output_type(model), output_length(model))
     end
-    E = isa(model.E, VectorOfVectors) ? Matrix(model.E) : model.E
-    ode_p = (Matrix(model.A), Matrix(model.B), E, u)
+    ode_p = (model,u)
+    if !isa(model.E, UniformScaling)
+        model.E = factorize(model.E)
+    end 
     return ODEProblem(f_lti, x0, tspan, ode_p)
 end
 
@@ -211,23 +211,26 @@ function to_dss(model::LTIModel, p=nothing)
 end
 
 """
-`frequency_model = to_frequency_domain(model)`
+`frequency_model = to_frequency_domain(model, logfreq=false)`
 
 Assuming null initial conditions, uses the Laplace transform
 to convert the `LTIModel` into a `LinearMatrixModel` for which the
 first element of the parameter vector is the imaginary part of
 the frequency variable. The model is of the form
 `sE(p) X = A(p) X + B(p)` where `X` is the Laplace variable
-for `X` and `s = 0 + iω`
+for `X` and `s = 0 + iω`. If `logfreq=true`, then scales ω
+such that `p[1] = log10(ω)`.
 """
-function to_frequency_domain(model::LTIModel) # TODO: Add Re(s) != 0 argument?
-    imEp_arrs = begin 
+function to_frequency_domain(model::LTIModel, logfreq=false) # TODO: Add Re(s) != 0 argument?
+    scale = logfreq ? exp10 : identity
+    imEp = begin 
         if isnothing(model.Ep)
-            if isa(model.E, UniformScaling)
+            arrs = if isa(model.E, UniformScaling)
                 [spdiagm(im * model.E.λ .* ones(ComplexF64, size(model.A, 1)))]
             else
                 [im .* model.E]
             end
+            APArray(arrs, i -> scale(p[1]))
         else
             APArray(im .* model.Ep.arrays, model.Ep.makeθi)
         end
@@ -235,13 +238,14 @@ function to_frequency_domain(model::LTIModel) # TODO: Add Re(s) != 0 argument?
 
     sEmAp = begin
         if isnothing(model.Ap)
-            sImAs = [imEp_arrs..., (1 + 0im) .* model.A]
-            makeθImAis = (p,i) -> (i <= length(imEp_arrs)) ? p[1] : -1.0
+            sImAs = [imEp.arrays..., (1 + 0im) .* model.A]
+            makeθImAis = (p,i) -> (i <= length(imEp.arrays)) ? scale(p[1]) : -1.0
             APArray(sImAs, makeθImAis)
         else
             # Paramater dependence in A
-            sImAs = [imEp_arrs..., ((1 + 0im) .* model.Ap.arrays)...]
-            makeθImAis = (p,i) -> (i <= length(imEp_arrs)) ? p[1] : (-1.0 .* model.Ap.makeθi(view(p,2:length(p)), i-length(imEp_arrs)))
+            sImAs = [imEp.arrays..., ((1 + 0im) .* model.Ap.arrays)...]
+            makeθImAis = (p,i) -> (i <= length(imEp.arrays)) ? scale(p[1]) : (-1.0 .* model.Ap.makeθi(view(p,2:length(p)), i-length(imEp.arrays)))
+            makeθImAis = (p,i) -> (i == 1) ? scale(p[1]) : (-1.0 .* model.Ap.makeθi(view(p,2:length(p)), i-length(imEp.arrays)))
             APArray(sImAs, makeθImAis)
         end
     end

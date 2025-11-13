@@ -59,41 +59,48 @@ function full_lu(A::AbstractMatrix;steps::Int=-1)
     return FullLU(P,L,U,Q)
 end
 
-"""
-`smallest_real_eigval(A, kmaxiter[, noise=1, krylovsteps=10])`
-
-Given a hermitian matrix `A`, attempts to compute the 
-most negative (real) eigenvalue. First, uses Krylov iteration
-with a shift-invert procedure with Gershgorin disks, and if 
-not successful, calls a full, dense, eigensolve.
-"""
-function smallest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, krylovsteps=10, shifttol=1e4)
-    # Try invert method per Gershgorin disks
-    mingd = 0.0
-    mingd_center = 0.0
+# Compute real eigenvalue given by which (:S, :L, :SP)
+function reig(A::AbstractMatrix, B=I; which=:L, kmaxiter=300, noise=0, krylovsteps=10)
+    # Compute Gershgorin disks
+    mingd = 0.0; maxgd = 0.0
+    mingd_center = 0.0; maxgd_center = 0.0
     for i in 1:size(A)[1]
         newmingd = real(A[i,i]) - (sum(abs.(view(A,i,:))) - abs(A[i,i]))
         if newmingd < mingd
             mingd = newmingd
             mingd_center = real(A[i,i])
         end
+        newmaxgd = real(A[i,i]) + (sum(abs.(view(A,i,:))) - abs(A[i,i]))
+        if newmaxgd > maxgd
+            maxgd = newmaxgd
+            maxgd_center = real(A[i,i])
+        end
     end
-
     log_tilde(x) = x >= 1 ? log(x) : (x <= -1 ? -log(-x) : 0)
-    exp_tilde(x) = x > 0 ? exp(x) : -exp(-x)
-    exprange = unique(exp_tilde.(range(log_tilde(mingd), log_tilde(mingd_center), krylovsteps)))
-    for sigma in exprange
+    exp_tilde(x) = x > 0 ? exp(x) : (x < 0 ? -exp(-x) : 0)
+    sigmas = begin 
+        if which == :S
+            unique(exp_tilde.(range(log_tilde(mingd - 1.5), log_tilde(mingd_center), krylovsteps)))
+        elseif which == :L
+            unique(exp_tilde.(range(log_tilde(maxgd + 1.5), log_tilde(maxgd_center), krylovsteps)))
+        elseif which == :SP
+            (-1e-4,) # To avoid div by zero
+        else
+            error("Unknown which=$which, choose between (:S, :L, :SP) for smallest, largest, or smallest positive (real) eigenvectors")
+        end
+    end
+    for sigma in sigmas
         try
-            res = eigs(A, which=:LM, sigma=sigma, nev=1, ritzvec=false, maxiter=kmaxiter)
-            return real(res[1][1])
+            res = eigs(A, B, which=:LM, sigma=sigma, nev=1, ritzvec=true, maxiter=kmaxiter)
+            return (real(res[1][1]), real.(view(res[2],:,1)))
         catch e
-            if !(isa(e,Arpack.XYAUPD_Exception) || isa(e, ZeroPivotException))
+            if isa(e, SingularException) || isa(e, ZeroPivotException)
+                # Try at new value
+                continue
+            end
+            if !(isa(e,XYAUPD_Exception) || isa(e, ZeroPivotException))
                 # Did not converge
                 error(e)
-            end
-            if isa(e, ZeroPivotException) && sigma == 0
-                # Zero is the minimum eigenvalue
-                return 0.0
             end
         end
         if noise >= 2
@@ -104,64 +111,18 @@ function smallest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1, krylovsteps=
         println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
     end
     # Perform brute eigen
-    res = eigen!(issparse(A) ? collect(A) : A)
-    return minimum(real.(res.values))
-end
-
-"""
-`largest_real_eigval(A, kmaxiter[, noise=1])`
-
-Given a hermitian matrix `A`, attempts to compute the 
-most positive (real) eigenvalue. First, uses Krylov iteration
-with no shift-invert, and if not successful, calls a full, 
-dense, eigensolve.
-"""
-function largest_real_eigval(A::AbstractMatrix, kmaxiter, noise=1)
-    # Do not invert
-    try
-        res = eigs(A, which=:LR, nev=1, ritzvec=false, maxiter=kmaxiter)
-        return real(res[1][1])
-    catch e
-        if !isa(e,Arpack.XYAUPD_Exception)
-            error(e)
-        end
-        if noise >= 1
-            println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
-        end
-        # Perform brute eigen
-        res = eigen!(issparse(A) ? collect(A) : A)
-        return maximum(real.(res.values))
-    end
-end
-
-"""
-`smallest_real_pos_eigpair(A, kmaxiter[, noise=1])`
-
-Given a hermitian, positive definite matrix `A`, attempts to compute the 
-smallest (real) eigenvalue and eigenvector. First, uses Krylov iteration
-with shift-invert around zero, and if not successful, calls a full, 
-dense, eigensolve. Returns a tuple with the first component being the 
-eigenvalue, and the second component being the eigenvector.
-"""
-function smallest_real_pos_eigpair(A::AbstractMatrix, kmaxiter, noise=1)
-    # Try invert around 0
-    try
-        res = eigs(A, which=:LM, sigma=0, nev=1, ritzvec=true, maxiter=kmaxiter)
-        return (real(res[1][1]), view(res[2],:,1))
-    catch e
-        if !(isa(e,Arpack.XYAUPD_Exception) || isa(e, ZeroPivotException))
-            error(e)
-        end
-        if isa(e, ZeroPivotException) && sigma == 0
-            # Zero is the minimum eigenvalue
-            return (0.0, zeros(eltype(A), size(A, 1)))
-        end
-        if noise >= 1
-            println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
-        end
-        # Perform brute eigen
-        res = eigen!(issparse(A) ? collect(A) : A, sortby=real)
-        return (minimum(real.(res.values)), res.vectors[:,1])
+    res = eigen(issparse(A) ? collect(A) : A, issparse(B) ? collect(B) : B)
+    if which == :S
+        λ,i = findmin(res.values)
+        return real(λ), view(res.vectors, :, i)
+    elseif which == :L
+        λ,i = findmax(res.values)
+        return real(λ), view(res.vectors, :, i)
+    elseif which == :SP
+        λ,i = findmin(x -> x < 0 ? Inf : real(x), res.values)
+        return real(λ), view(res.vectors, :, i)
+    else
+        error("Unknown which=$which, choose between (:S, :L, :SP) for smallest, largest, or smallest positive (real) eigenvectors")
     end
 end
 
@@ -172,27 +133,26 @@ Given a matrix `A`, attempts to compute the smallest singular
 value of it by Krylov iteration and inversion around 0. If
 unsuccessful, computes a full, dense svd.
 """
-function smallest_sval(A::AbstractMatrix, kmaxiter, noise=1)
+function smallest_sval(A::AbstractMatrix; kmaxiter=300, noise=0)
     AtA = A'A
-    # Try invert around 0
+    return reig(AtA, which=:SP, kmaxiter=kmaxiter, noise=noise)[1]
+end
+
+"""
+`largest_sval(A, kmaxiter[, noise=1])`
+
+Given a matrix `A`, attempts to compute the largest singular
+value of it by Krylov iteration and inversion around maximal
+Gershgorin disk. If unsuccessful, computes a full, dense svd.
+"""
+function largest_sval(A::AbstractMatrix; kmaxiter=300, noise=1)
     try
-        res = eigs(AtA, which=:LM, sigma=0, nev=1, ritzvec=false, maxiter=kmaxiter)
-        return sqrt(max(0,real(res[1][1])))
+        return maximum(svds(A, maxiter=kmaxiter, nsv=1)[1].S)
     catch e
-        if !(isa(e,Arpack.XYAUPD_Exception) || isa(e, ZeroPivotException))
-            # Did not converge
-            error(e)
-        end
-        if isa(e, ZeroPivotException) && sigma == 0
-            # Zero is the minimum eigenvalue
-            return 0.0
-        end
         if noise >= 1
-            println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
+            println("svds did not converge, computing full SVD")
         end
-        # Perform brute eigen
-        res = eigen!(issparse(AtA) ? collect(AtA) : AtA, sortby=real)
-        return sqrt(max(0,minimum(real.(res.values))))
+        return maximum(svd(issparse(A) ? collect(A) : A).S)
     end
 end
 
@@ -217,4 +177,57 @@ function orthonormalize_mgs2!(u::AbstractVector,V::AbstractMatrix)
         u ./= nu
     end
     return nu
+end
+
+function max_real_numerical_range(A)
+    return largest_real_eigval(0.5 .* (A .+ A'), 1000)
+end
+
+function nrange(B; nk=1, thmax=32)
+        function rq(A, x)
+                return x'*A*x/(x'*x)
+        end
+        thmax -= 1 # the function uses thmax + 1 angles
+
+        (n, p) = size(B)
+        if n != p
+                DimensionMismatch("Matrix must be square.")
+        end
+
+        z = Vector{ComplexF64}(undef, 2*thmax + 1)
+        F = eigen(collect(B))
+        e = F.values
+        f = ComplexF64[]
+
+        # filter out cases where B is Hermitian or skew-Hermitian
+        if B == B'
+                f = [minimum(e), maximum(e)]
+        elseif B == -B'
+                e = imag(e)
+                f = [minimum(e), maximum(e)]
+                e *= im
+                f *= im
+        else
+                for m = 1:nk
+                        ns = n + 1 - m
+                        A = B[1:ns, 1:ns]
+                        for i = 0:thmax
+                                th = i/thmax*pi
+                                Ath = exp(im*th)*A
+                                H = 0.5*(Ath + Ath')
+                                X = eigen(collect(H), sortby = x -> real(x))
+                                V = X.vectors
+                                z[i + 1] = rq(A, V[:, 1])
+                                z[i + 1 + thmax] = rq(A, V[:, ns])
+                        end
+                        f = [f; z]
+                end
+                # join up the boundary
+                f = [f; f[1]]
+        end
+        if thmax == 0
+                f = e
+        end
+
+        return f, e
 end

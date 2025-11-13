@@ -22,27 +22,8 @@ stability factor with `stability_estimator(p)` and computes
 the residual norm with `residual_norm`.
 """
 struct StabilityResidualErrorEstimator <: ErrorEstimator
-    stability_estimator::Union{Function,SCM_Init}
+    stability_estimator::Function
     residual_norms::Vector{ResidualNormComputer}
-    function StabilityResidualErrorEstimator(model::LinearModel, param_disc; residual=:proj, coercive=true, Ma=15, Mp=15, eps_SCM=1e-2, kmaxiter=1000, noise=1)
-        stability_estimator = begin
-            if coercive
-                initialize_SCM_SPD(param_disc, model.Ap, Ma, Mp, eps_SCM, kmaxiter=kmaxiter, noise=noise)
-            else
-                initialize_SCM_Noncoercive(param_disc, model.Ap, Ma, Mp, eps_SCM, kmaxiter=kmaxiter, noise=noise)
-            end
-        end
-        residual_norm = begin
-            if residual == :standard
-                StandardResidualNormComputer(model.Ap, model.bp)
-            elseif residual == :proj
-                ProjectionResidualNormComputer(model.Ap, model.bp)
-            else
-                error("Unknown residual keyword: $residual")
-            end
-        end
-        return new(stability_estimator, [residual_norm])
-    end
     function StabilityResidualErrorEstimator(model::LinearModel, custom_stability_estimator::Function; residual=:proj)
         residual_norm = begin
             if residual == :standard
@@ -50,29 +31,10 @@ struct StabilityResidualErrorEstimator <: ErrorEstimator
             elseif residual == :proj
                 ProjectionResidualNormComputer(model.Ap, model.bp)
             else
-                error("Unknown residual keyword: $residual")
+                error("Unknown residual keyword: $residual; choose from (:standard, :proj)")
             end
         end
         return new(custom_stability_estimator, [residual_norm])
-    end
-    function StabilityResidualErrorEstimator(model::LinearMatrixModel, param_disc; residual=:proj, coercive=true, Ma=15, Mp=15, eps_SCM=1e-2, kmaxiter=1000, noise=1)
-        stability_estimator = begin
-            if coercive
-                initialize_SCM_SPD(param_disc, model.Ap, Ma, Mp, eps_SCM, kmaxiter=kmaxiter, noise=noise)
-            else
-                initialize_SCM_Noncoercive(param_disc, model.Ap, Ma, Mp, eps_SCM, kmaxiter=kmaxiter, noise=noise)
-            end
-        end
-        residual_norms = [begin
-            if residual == :standard
-                StandardResidualNormComputer(model.Ap, bp)
-            elseif residual == :proj
-                ProjectionResidualNormComputer(model.Ap, bp)
-            else
-                error("Unknown residual keyword: $residual")
-            end
-        end for bp in model.bps]
-        return new(stability_estimator, residual_norms)
     end
     function StabilityResidualErrorEstimator(model::LinearMatrixModel, custom_stability_estimator::Function; residual=:proj)
         residual_norms = [begin
@@ -81,7 +43,7 @@ struct StabilityResidualErrorEstimator <: ErrorEstimator
             elseif residual == :proj
                 ProjectionResidualNormComputer(model.Ap, bp)
             else
-                error("Unknown residual keyword: $residual")
+                error("Unknown residual keyword: $residual; choose from (:standard, :proj)")
             end
         end for bp in model.bps]
         return new(custom_stability_estimator, residual_norms)
@@ -292,14 +254,12 @@ end
 """
 `lift(wg_reductor, x_r)`
 
-Given a vector solution `x_r` to a ROM formed by the
-`wg_reductor`, which is of smaller dimension than outputs
-of the FOM, lifts the solution to the same dimension of
+Given a solution array `x_r` to a ROM formed by the
+`wg_reductor` lifts the solution(s) to the same dimension of
 the FOM. 
 """
-function lift(wg_reductor::WGReductor, x_r::AbstractVector)
-    r = length(x_r)
+function lift(wg_reductor::WGReductor, x_r::AbstractArray)
+    r = size(x_r,1)
     V = wg_reductor.V
-    N, M = size(V)
-    return view(Matrix(V), 1:N, 1:r) * x_r
+    return V[:, 1:r] * x_r
 end

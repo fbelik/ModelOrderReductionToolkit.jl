@@ -26,16 +26,17 @@ using LinearAlgebra
     end
     @test maximum(errs) < ERR_TOL
     # WG Reductor
-    SCM_TOL = 1e-1
-    for c in [true,false]
-        error_estimator = StabilityResidualErrorEstimator(model, params, coercive=c)
+    SCM_EPS = 0.5
+    # Test on all kinds of SCM
+    scms = [SPD_SCM(model.Ap, params, SCM_EPS, coercive=true),
+            SPD_SCM(model.Ap, params, SCM_EPS, coercive=false),
+            ANLSCM(model.Ap, params, SCM_EPS),
+            NNSCM(model.Ap, params, SCM_EPS)]
+    for scm in scms
         # Test that SCM has sufficiently small ϵ
-        errs = Float64[]
-        for p in params
-            (lb,ub) = find_sigma_bounds(error_estimator.stability_estimator, p)
-            push!(errs, (ub - lb) / ub)
-        end
-        @test maximum(errs) < SCM_TOL
+        errs = scm.(params, which=:E)
+        @test maximum(errs) <= SCM_EPS
+        error_estimator = StabilityResidualErrorEstimator(model, scm)
         wg_reductor = WGReductor(model, error_estimator)
         add_to_rb!(wg_reductor, params, r, eps=0)
         rom = form_rom(wg_reductor, r)
@@ -74,11 +75,11 @@ end
     @test maximum(bodeerr) < ERR_TOL
     # RB Method
     freq_model = to_frequency_domain(model)
-    params = [[ω,i,j,k] for ω in range(-500,500,21) for i in range(-40,40,5) for j in range(-40,40,5) for k in range(-40,40,5)]
+    params = [[ω,i,j,k] for ω in logrange(1e-2,1e3,50) for i in range(-40,40,5) for j in range(-40,40,5) for k in range(-40,40,5)]
     rb_reductor = PODReductor(freq_model)
     add_to_rb!(rb_reductor, params)
     rom = galerkin_project(model, Matrix(rb_reductor.V[:,1:r]))
-    omegas = range(-500,500,1001)
+    omegas = logrange(1e-2,1e3,1000)
     for p in [[0,0,0],[0,0,50],[40,-40,0],[10,15,-15]]
         bodeerr = abs.(bode(model, omegas, p, first=true) .- bode(rom, omegas, p, first=true))
         println("Bode error for rb method at p=$p - $(maximum(bodeerr))")

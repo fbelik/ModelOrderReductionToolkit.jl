@@ -114,14 +114,12 @@ end
 """
 `lift(sg_reductor, x_r)`
 
-Given a vector solution `x_r` to a ROM formed by the
-`sg_reductor`, which is of smaller dimension than outputs
-of the FOM, lifts the solution to the same dimension of
+Given a solution array `x_r` to a ROM formed by the
+`sg_reductor` lifts the solution(s) to the same dimension of
 the FOM. 
 """
-function lift(reductor::SGReductor, x_r::AbstractVector)
-    r = length(x_r)
-    V = reductor.V
-    N, M = size(V)
-    return view(Matrix(V), 1:N, 1:r) * x_r
+function lift(sg_reductor::SGReductor, x_r::AbstractArray)
+    r = size(x_r,1)
+    V = sg_reductor.V
+    return V[:, 1:r] * x_r
 end
