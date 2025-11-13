@@ -75,11 +75,12 @@ end
     @test maximum(bodeerr) < ERR_TOL
     # RB Method
     freq_model = to_frequency_domain(model)
-    params = [[ω,i,j,k] for ω in logrange(1e-2,1e3,50) for i in range(-40,40,5) for j in range(-40,40,5) for k in range(-40,40,5)]
+    ωs = range(-2,3)
+    params = [[ω,i,j,k] for ω in 10.0 .^ range(-2,3,50) for i in range(-40,40,5) for j in range(-40,40,5) for k in range(-40,40,5)]
     rb_reductor = PODReductor(freq_model)
     add_to_rb!(rb_reductor, params)
     rom = galerkin_project(model, Matrix(rb_reductor.V[:,1:r]))
-    omegas = logrange(1e-2,1e3,1000)
+    omegas = 10.0 .^ range(-2,3,1000)
     for p in [[0,0,0],[0,0,50],[40,-40,0],[10,15,-15]]
         bodeerr = abs.(bode(model, omegas, p, first=true) .- bode(rom, omegas, p, first=true))
         println("Bode error for rb method at p=$p - $(maximum(bodeerr))")
