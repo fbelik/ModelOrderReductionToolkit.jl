@@ -205,13 +205,13 @@ function add_to_rb!(wg_reductor::WGReductor{NOUT}, params::AbstractVector; noise
 end
 
 """
-`add_to_rb!(wg_reductor, params, r[; noise=1, eps=0.0, zero_tol=1e-15])`
+`add_to_rb!(wg_reductor, params, r[; noise=0, eps=0.0, zero_tol=1e-15])`
 
 Adds to `wg_reductor` at least `r` times by calling 
 `add_to_rb!(wg_reductor, params, noise=noise, eps=eps, zero_tol=zero_tol)` several times.
 If all `r` are added, returns `true`, otherwise `false`.
 """
-function add_to_rb!(wg_reductor::WGReductor, params::AbstractVector, r; noise=1, progress=false, eps=0.0, zero_tol=1e-15)
+function add_to_rb!(wg_reductor::WGReductor, params::AbstractVector, r; noise=0, progress=false, eps=0.0, zero_tol=1e-15)
     for i in 1:r
         added = add_to_rb!(wg_reductor, params, noise=noise, progress=progress, eps=eps, zero_tol=zero_tol)
         if !added

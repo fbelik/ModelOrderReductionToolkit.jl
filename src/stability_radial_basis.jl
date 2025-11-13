@@ -64,8 +64,8 @@ function min_sigma_rbf(params::Union{Matrix,Vector},
                        Ap::Union{Function,APArray},
                        ϕ::Function=gaussian_rbf;
                        kmaxiter=1000,
-                       noise=1,
-                       progress=true)
+                       noise=0,
+                       progress=false)
 
     if typeof(params) <: Matrix
         P,NP = size(params)
