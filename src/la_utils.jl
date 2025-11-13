@@ -59,7 +59,20 @@ function full_lu(A::AbstractMatrix;steps::Int=-1)
     return FullLU(P,L,U,Q)
 end
 
-# Compute real eigenvalue given by which (:S, :L, :SP)
+"""
+`reig(A::AbstractMatrix, [B=I; which=:L, kmaxiter=300, noise=0, krylovsteps=10])`
+
+Given (symmetric) matrices `A` and `B`, computes a real eigenvalue
+
+``A x = λ B x``.
+
+- `which=:L` corresponds to the largest eigenvalue
+- `which=:S` corresponds to the smallest eigenvalue
+- `which=:SP` corresponds to the smallest positive eigenvalue
+
+Attempts to do this by shift-and-invert using `Arpack.jl` where the shifts are
+determined by the eigenvalue seeked and the Gershgorin disks of `A`.
+"""
 function reig(A::AbstractMatrix, B=I; which=:L, kmaxiter=300, noise=0, krylovsteps=10)
     # Compute Gershgorin disks
     mingd = 0.0; maxgd = 0.0
@@ -134,8 +147,7 @@ value of it by Krylov iteration and inversion around 0. If
 unsuccessful, computes a full, dense svd.
 """
 function smallest_sval(A::AbstractMatrix; kmaxiter=300, noise=0)
-    AtA = A'A
-    return reig(AtA, which=:SP, kmaxiter=kmaxiter, noise=noise)[1]
+    return reig(A'A, which=:SP, kmaxiter=kmaxiter, noise=noise)[1]
 end
 
 """

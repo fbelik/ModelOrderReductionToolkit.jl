@@ -66,9 +66,8 @@ ModelOrderReductionToolkit.ProjectionResidualNormComputer
 ### Linear algebra utilities
 ```@docs
 ModelOrderReductionToolkit.full_lu
-ModelOrderReductionToolkit.smallest_real_eigval
-ModelOrderReductionToolkit.largest_real_eigval
-ModelOrderReductionToolkit.smallest_real_pos_eigpair
+ModelOrderReductionToolkit.reig
 ModelOrderReductionToolkit.smallest_sval
+ModelOrderReductionToolkit.largest_sval
 ModelOrderReductionToolkit.orthonormalize_mgs2!
 ```
