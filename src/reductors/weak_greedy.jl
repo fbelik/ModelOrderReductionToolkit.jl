@@ -139,14 +139,14 @@ function add_directly_to_rb!(wg_reductor::WGReductor, x::AbstractVector)
 end
 
 """
-`add_to_rb!(wg_reductor, params[; noise=1, eps=0.0, zero_tol=1e-15])`
+`add_to_rb!(wg_reductor, params[; noise=0, progress=false, eps=0.0, zero_tol=1e-15])`
 
 Loops through the vector of parameters `params`, computes the approximate estimator
 for each, selects the one with the highest error, and updates `wg_reductor` with 
 the corresponding full order solution. Returns `true` if a vector is added to the RB,
 `false` otherwise.
 """
-function add_to_rb!(wg_reductor::WGReductor{NOUT}, params::AbstractVector; noise=1, progress=false, eps=0.0, zero_tol=1e-15) where NOUT
+function add_to_rb!(wg_reductor::WGReductor{NOUT}, params::AbstractVector; noise=0, progress=false, eps=0.0, zero_tol=1e-15) where NOUT
     k = size(wg_reductor.V, 2) + 1
     if k > output_length(wg_reductor.model)
         if noise >= 1
@@ -196,6 +196,7 @@ function add_to_rb!(wg_reductor::WGReductor{NOUT}, params::AbstractVector; noise
         add_directly_to_rb!(wg_reductor, x)
     elseif noise >= 1
         @printf("After orthogonalizing, truth vector had norm %.2e < zero_tol, not appending to RB\n", nx)
+        return false
     end
     if noise >= 1
         @printf("(%d) truth error = %.4e, upperbound error = %.4e\n",k,truth_error,max_error)
