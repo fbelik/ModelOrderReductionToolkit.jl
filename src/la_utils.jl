@@ -140,7 +140,7 @@ function reig(A::AbstractMatrix, B=I; which=:L, kmaxiter=300, noise=0, krylovste
 end
 
 """
-`smallest_sval(A, kmaxiter[, noise=1])`
+`smallest_sval(A, kmaxiter[, noise=0])`
 
 Given a matrix `A`, attempts to compute the smallest singular
 value of it by Krylov iteration and inversion around 0. If
@@ -151,13 +151,13 @@ function smallest_sval(A::AbstractMatrix; kmaxiter=300, noise=0)
 end
 
 """
-`largest_sval(A, kmaxiter[, noise=1])`
+`largest_sval(A, kmaxiter[, noise=0])`
 
 Given a matrix `A`, attempts to compute the largest singular
 value of it by Krylov iteration and inversion around maximal
 Gershgorin disk. If unsuccessful, computes a full, dense svd.
 """
-function largest_sval(A::AbstractMatrix; kmaxiter=300, noise=1)
+function largest_sval(A::AbstractMatrix; kmaxiter=300, noise=0)
     try
         return maximum(svds(A, maxiter=kmaxiter, nsv=1)[1].S)
     catch e
