@@ -1,5 +1,5 @@
 """
-`reductor = BTReductor(model::LTIModel[, p=nothing; noise=1, iterative=nothing, maxdim=-1, lradi_eps=1e-6, dense_row_tol=1e-8])`
+`reductor = BTReductor(model::LTIModel[, p=nothing; noise=0, iterative=nothing, maxdim=-1, lradi_eps=1e-6, dense_row_tol=1e-8])`
 
 Balanced truncation reductor object for reducing an `LTIModel`. If parameter
 `p` passed in, model first initialized to parameter value. `noise` determines
@@ -41,7 +41,7 @@ function Base.show(io::Core.IO, reductor::BTReductor)
     end
 end
 
-function BTReductor(model::LTIModel, p=nothing; noise=1, iterative::Union{Bool,Nothing}=nothing, maxdim=-1, lradi_eps=1e-6, dense_row_tol=1e-8)
+function BTReductor(model::LTIModel, p=nothing; noise=0, iterative::Union{Bool,Nothing}=nothing, maxdim=-1, lradi_eps=1e-6, dense_row_tol=1e-8)
     if !isnothing(p)
         model(p)
     elseif is_parameterized(model) && noise >= 1
