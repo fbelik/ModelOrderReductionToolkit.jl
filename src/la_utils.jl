@@ -60,7 +60,7 @@ function full_lu(A::AbstractMatrix;steps::Int=-1)
 end
 
 """
-`reig(A::AbstractMatrix, [B=I; which=:L, kmaxiter=300, noise=0, krylovsteps=10])`
+`reig(A::AbstractMatrix, [B=I; which=:L, kmaxiter=1000, noise=0, krylovsteps=8, pert_eps=1e-4])`
 
 Given (symmetric) matrices `A` and `B`, computes a real eigenvalue
 
@@ -73,7 +73,7 @@ Given (symmetric) matrices `A` and `B`, computes a real eigenvalue
 Attempts to do this by shift-and-invert using `Arpack.jl` where the shifts are
 determined by the eigenvalue seeked and the Gershgorin disks of `A`.
 """
-function reig(A::AbstractMatrix, B=I; which=:L, kmaxiter=300, noise=0, krylovsteps=10)
+function reig(A::AbstractMatrix, B=I; which=:L, kmaxiter=1000, noise=0, krylovsteps=8, pert_eps=1e-4)
     # Compute Gershgorin disks
     mingd = 0.0; maxgd = 0.0
     mingd_center = 0.0; maxgd_center = 0.0
@@ -91,21 +91,45 @@ function reig(A::AbstractMatrix, B=I; which=:L, kmaxiter=300, noise=0, krylovste
     end
     log_tilde(x) = x >= 1 ? log(x) : (x <= -1 ? -log(-x) : 0)
     exp_tilde(x) = x > 0 ? exp(x) : (x < 0 ? -exp(-x) : 0)
-    sigmas = begin 
-        if which == :S
-            unique(exp_tilde.(range(log_tilde(mingd - 1.5), log_tilde(mingd_center), krylovsteps)))
-        elseif which == :L
-            unique(exp_tilde.(range(log_tilde(maxgd + 1.5), log_tilde(maxgd_center), krylovsteps)))
-        elseif which == :SP
-            (-1e-4,) # To avoid div by zero
+    sigmas = Float64[]
+    if which == :S
+        if mingd < 0 && 0 < mingd_center
+            append!(sigmas, exp_tilde.(range(log_tilde(mingd - 1.5), 0.0, div(krylovsteps,2))))
+            append!(sigmas, exp_tilde.(range(0.0, log_tilde(mingd_center), div(krylovsteps,2))))
         else
-            error("Unknown which=$which, choose between (:S, :L, :SP) for smallest, largest, or smallest positive (real) eigenvectors")
+            append!(sigmas, exp_tilde.(range(log_tilde(mingd - 1.5), log_tilde(mingd_center), krylovsteps)))
         end
+    elseif which == :L
+        if maxgd > 0 && 0 > maxgd_center
+            append!(sigmas, exp_tilde.(range(log_tilde(maxgd + 1.5), 0.0, div(krylovsteps,2))))
+            append!(sigmas, exp_tilde.(range(0.0, log_tilde(maxgd_center), div(krylovsteps,2))))
+        else
+            append!(sigmas, exp_tilde.(range(log_tilde(maxgd + 1.5), log_tilde(maxgd_center), krylovsteps)))
+        end
+    elseif which == :SP
+        push!(sigmas, 0+pert_eps)
+    else
+        error("Unknown which=$which, choose between (:S, :L, :SP) for smallest, largest, or smallest positive (real) eigenvectors")
     end
-    for sigma in sigmas
+    unique!(sigmas)
+    for (i,sigma) in enumerate(sigmas)
         try
-            res = eigs(A, B, which=:LM, sigma=sigma, nev=1, ritzvec=true, maxiter=kmaxiter)
-            return (real(res[1][1]), real.(view(res[2],:,1)))
+            res = eigs(A, B, which=:LM, sigma=sigma, ritzvec=true, nev=1, maxiter=kmaxiter)
+            eg = real(res[1][1]); egval = res[2][:,1]
+            #println("here with sigma=$sigma, eg = $eg")
+            if abs(sigma - eg) > 1.0 && i < length(sigmas) && eg < sigmas[i+1]
+                sigma = real(res[1][1]) + pert_eps
+                try # Try again to recenter about real(res[1][1])
+                    res = eigs(A, B, which=:LM, sigma=sigma, ritzvec=true, nev=1, maxiter=kmaxiter)
+                    eg = real(res[1][1]); egval = res[2][:,1]
+                    if abs(sigma - eg) < 1.0
+                        return eg, egval
+                    end
+                catch _
+                end
+            elseif i == length(sigmas) || i < length(sigmas) && eg < sigmas[i+1]
+                return eg, egval
+            end
         catch e
             if isa(e, SingularException) || isa(e, ZeroPivotException)
                 # Try at new value
@@ -140,27 +164,27 @@ function reig(A::AbstractMatrix, B=I; which=:L, kmaxiter=300, noise=0, krylovste
 end
 
 """
-`smallest_sval(A, kmaxiter[, noise=0])`
+`smallest_sval(A[; kmaxiter=1000, noise=0])`
 
 Given a matrix `A`, attempts to compute the smallest singular
 value of it by Krylov iteration and inversion around 0. If
 unsuccessful, computes a full, dense svd.
 """
-function smallest_sval(A::AbstractMatrix; kmaxiter=300, noise=0)
+function smallest_sval(A::AbstractMatrix; kmaxiter=1000, noise=0)
     return reig(A'A, which=:SP, kmaxiter=kmaxiter, noise=noise)[1]
 end
 
 """
-`largest_sval(A, kmaxiter[, noise=0])`
+`largest_sval(A[; kmaxiter=1000, noise=0])`
 
 Given a matrix `A`, attempts to compute the largest singular
 value of it by Krylov iteration and inversion around maximal
 Gershgorin disk. If unsuccessful, computes a full, dense svd.
 """
-function largest_sval(A::AbstractMatrix; kmaxiter=300, noise=0)
+function largest_sval(A::AbstractMatrix; kmaxiter=1000, noise=0)
     try
-        return maximum(svds(A, maxiter=kmaxiter, nsv=1)[1].S)
-    catch e
+        return svds(A, maxiter=kmaxiter, nsv=1)[1].S[1]
+    catch _
         if noise >= 1
             println("svds did not converge, computing full SVD")
         end

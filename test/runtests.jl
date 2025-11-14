@@ -32,6 +32,11 @@ using LinearAlgebra
             SPD_SCM(model.Ap, params, SCM_EPS, coercive=false),
             ANLSCM(model.Ap, params, SCM_EPS),
             NNSCM(model.Ap, params, SCM_EPS)]
+    # Test that each kind of SCM didn't do too much work 
+    @test length(keys(scms[1].UBs)) < length(params) / 2
+    @test length(keys(scms[2].UBs)) < length(params) / 2
+    @test length(keys(scms[3].UBs)) < length(params) / 2
+    @test length(keys(scms[4].UBs)) < length(params) / 2
     for scm in scms
         # Test that SCM has sufficiently small ϵ
         errs = scm.(params, which=:E)
