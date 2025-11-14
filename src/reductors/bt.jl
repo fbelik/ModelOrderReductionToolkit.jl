@@ -112,14 +112,12 @@ end
 """
 `lift(bt_reductor, x_r)`
 
-Given a vector solution `x_r` to a ROM formed by the
-`pod_reductor`, which is of smaller dimension than outputs
-of the FOM, lifts the solution to the same dimension of
-the FOM. 
+Given a solution array `x_r` to a ROM formed by the
+`bt_reductor` lifts the solution(s) to the same dimension of
+the FOM.   
 """
-function lift(bt_reductor::BTReductor, x_r::AbstractVector)
-    r = length(x_r)
+function lift(bt_reductor::BTReductor, x_r::AbstractArray)
+    r = size(x_r,1)
     V = bt_reductor.V
-    N, M = size(V)
-    return view(V, 1:N, 1:r) * x_r
+    return V[:, 1:r] * x_r
 end
