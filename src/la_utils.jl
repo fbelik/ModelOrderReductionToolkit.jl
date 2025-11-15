@@ -60,7 +60,7 @@ function full_lu(A::AbstractMatrix;steps::Int=-1)
 end
 
 """
-`reig(A::AbstractMatrix, [B=I; which=:L, kmaxiter=1000, noise=0, krylovsteps=8, pert_eps=1e-4])`
+`reig(A::AbstractMatrix, [B=I; which=:L, kmaxiter=1000, noise=0, krylovsteps=8, eps=1e-14, reldifftol=0.9])`
 
 Given (symmetric) matrices `A` and `B`, computes a real eigenvalue
 
@@ -72,10 +72,15 @@ Given (symmetric) matrices `A` and `B`, computes a real eigenvalue
 
 Attempts to do this by shift-and-invert using `Arpack.jl` where the shifts are
 determined by the eigenvalue seeked and the Gershgorin disks of `A`.
+
+Parameter `eps` is used to perturb shift parameters by relative amount to attempt
+to ensure no singular shifts. If the relative gap between the shift and the found
+eigenvalue is greater than `reldifftol`, attempts to resolve shifting about the 
+found eigenvalue.
 """
-function reig(A::AbstractMatrix, B=I; which=:L, kmaxiter=1000, noise=0, krylovsteps=8, pert_eps=1e-4)
+function reig(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; which=:L, kmaxiter=1000, noise=0, krylovsteps=8, eps=1e-14, reldifftol=0.9)
     # Compute Gershgorin disks
-    mingd = 0.0; maxgd = 0.0
+    mingd = Inf; maxgd = -Inf
     mingd_center = 0.0; maxgd_center = 0.0
     for i in 1:size(A)[1]
         newmingd = real(A[i,i]) - (sum(abs.(view(A,i,:))) - abs(A[i,i]))
@@ -107,7 +112,7 @@ function reig(A::AbstractMatrix, B=I; which=:L, kmaxiter=1000, noise=0, krylovst
             append!(sigmas, exp_tilde.(range(log_tilde(maxgd + 1.5), log_tilde(maxgd_center), krylovsteps)))
         end
     elseif which == :SP
-        push!(sigmas, 0+pert_eps)
+        push!(sigmas, max(abs(eps), mingd - abs(mingd*eps)))
     else
         error("Unknown which=$which, choose between (:S, :L, :SP) for smallest, largest, or smallest positive (real) eigenvectors")
     end
@@ -116,26 +121,24 @@ function reig(A::AbstractMatrix, B=I; which=:L, kmaxiter=1000, noise=0, krylovst
         try
             res = eigs(A, B, which=:LM, sigma=sigma, ritzvec=true, nev=1, maxiter=kmaxiter)
             eg = real(res[1][1]); egval = res[2][:,1]
-            #println("here with sigma=$sigma, eg = $eg")
-            if abs(sigma - eg) > 1.0 && i < length(sigmas) && eg < sigmas[i+1]
-                sigma = real(res[1][1]) + pert_eps
-                try # Try again to recenter about real(res[1][1])
-                    res = eigs(A, B, which=:LM, sigma=sigma, ritzvec=true, nev=1, maxiter=kmaxiter)
-                    eg = real(res[1][1]); egval = res[2][:,1]
-                    if abs(sigma - eg) < 1.0
-                        return eg, egval
-                    end
-                catch _
-                end
-            elseif i == length(sigmas) || i < length(sigmas) && eg < sigmas[i+1]
+            close = i == length(sigmas) || (i < length(sigmas) && eg < sigmas[i+1])
+            if !close
+                continue
+            end
+            if abs((sigma - eg) / max(abs(eg),abs(eps))) > reldifftol
+                sigma = eg - abs(eg*eps)
+                # Try again to recenter about eg
+                res = eigs(A, B, which=:LM, sigma=sigma, ritzvec=true, nev=1, maxiter=kmaxiter)
+                eg = real(res[1][1]); egval = res[2][:,1]
+                return eg, egval
+            else
                 return eg, egval
             end
         catch e
-            if isa(e, SingularException) || isa(e, ZeroPivotException)
+            if isa(e, SingularException) || isa(e, ZeroPivotException) || isa(e,XYAUPD_Exception)
                 # Try at new value
                 continue
-            end
-            if !(isa(e,XYAUPD_Exception) || isa(e, ZeroPivotException))
+            else
                 # Did not converge
                 error(e)
             end
@@ -148,18 +151,16 @@ function reig(A::AbstractMatrix, B=I; which=:L, kmaxiter=1000, noise=0, krylovst
         println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
     end
     # Perform brute eigen
-    res = eigen(issparse(A) ? collect(A) : A, issparse(B) ? collect(B) : B)
+    res = eigen(issparse(A) ? collect(A) : A, isa(B, UniformScaling) ? B(size(A,1)) : issparse(B) ? collect(B) : B)
     if which == :S
-        λ,i = findmin(res.values)
+        λ,i = findmin(x -> real(x), res.values)
         return real(λ), view(res.vectors, :, i)
     elseif which == :L
-        λ,i = findmax(res.values)
+        λ,i = findmax(x -> real(x), res.values)
         return real(λ), view(res.vectors, :, i)
-    elseif which == :SP
+    else # which == :SP
         λ,i = findmin(x -> x < 0 ? Inf : real(x), res.values)
         return real(λ), view(res.vectors, :, i)
-    else
-        error("Unknown which=$which, choose between (:S, :L, :SP) for smallest, largest, or smallest positive (real) eigenvectors")
     end
 end
 
@@ -178,8 +179,8 @@ end
 `largest_sval(A[; kmaxiter=1000, noise=0])`
 
 Given a matrix `A`, attempts to compute the largest singular
-value of it by Krylov iteration and inversion around maximal
-Gershgorin disk. If unsuccessful, computes a full, dense svd.
+value of it by Krylov iteration. If unsuccessful, computes a 
+full, dense svd.
 """
 function largest_sval(A::AbstractMatrix; kmaxiter=1000, noise=0)
     try
