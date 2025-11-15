@@ -1,7 +1,7 @@
 name = "ModelOrderReductionToolkit"
 uuid = "3b95acbd-20d2-4f07-8ac8-8df51737bf8b"
-authors = ["fbelik <fjbelik@gmail.com> and contributors"]
 version = "1.1.5"
+authors = ["fbelik <fjbelik@gmail.com> and contributors"]
 
 [deps]
 Arpack = "7d9fca2a-8960-54d3-9f78-7d1dccf2cb97"
@@ -21,7 +21,7 @@ Tulip = "6dd1b50a-3aae-11e9-10b5-ef983d2400fa"
 UpdatableQRFactorizations = "8b110c62-ada2-4dd7-b53a-29f29fe8f7f4"
 
 [compat]
-Arpack = "=0.5.3"
+Arpack = "=0.5.3, 0.5"
 ControlSystems = "1.10"
 DescriptorSystems = "1.4"
 JuMP = "1.0"
