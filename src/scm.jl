@@ -364,7 +364,7 @@ Makes a copy of `scm` and provides `lp_attrs` to the new JuMP model.
 function copy_scm(scm::NNSCM{P}; lp_attrs=Dict(), noise=0)  where P
     Q = length(scm.Ap.arrays)
     model = make_JuMP_model(scm.optimizer, Q, nothing, scm.R, lp_attrs, noise=noise)
-    return NNSCM{P}(scm.Ap, scm.AAp, scm.σ_maxs, deepcopy(scm.β_UBs), deepcopy(scm.UBs), deepcopy(scm.β_LBs), deepcopy(scm.σ_LBs), model, scm.optimizer, scm.R, deepcopy(scm.kdtrees), scm.certified)
+    return NNSCM{P}(scm.Ap, scm.AAp, scm.σ_maxs, deepcopy(scm.β_UBs), deepcopy(scm.UBs), deepcopy(scm.β_LBs), deepcopy(scm.σ_LBs), model, scm.optimizer, scm.R, deepcopy(scm.kdtrees))
 end
 
 function J(scm::SCM, p, y; Ap=scm.Ap)
