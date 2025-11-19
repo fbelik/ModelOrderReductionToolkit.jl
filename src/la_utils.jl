@@ -59,39 +59,33 @@ function full_lu(A::AbstractMatrix;steps::Int=-1)
     return FullLU(P,L,U,Q)
 end
 
-"""
-`reig(A::AbstractMatrix, [B=I; which=:L, kmaxiter=1000, noise=0, krylovsteps=8, eps=1e-14, reldifftol=0.9])`
-
-Given (symmetric) matrices `A` and `B`, computes a real eigenvalue
-
-``A x = λ B x``.
-
-- `which=:L` corresponds to the largest eigenvalue
-- `which=:S` corresponds to the smallest eigenvalue
-- `which=:SP` corresponds to the smallest positive eigenvalue
-
-Attempts to do this by shift-and-invert using `Arpack.jl` where the shifts are
-determined by the eigenvalue seeked and the Gershgorin disks of `A`.
-
-Parameter `eps` is used to perturb shift parameters by relative amount to attempt
-to ensure no singular shifts. If the relative gap between the shift and the found
-eigenvalue is greater than `reldifftol`, attempts to resolve shifting about the 
-found eigenvalue.
-"""
-function reig(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; which=:L, kmaxiter=1000, noise=0, krylovsteps=8, eps=1e-14, reldifftol=0.9)
+function compute_shifts(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; which=:L, randdisks=1000, ignoreB=false, minstep=10.0, krylovsteps=8, eps=1e-14)
+    N = size(A,1)
+    colidxs = (randdisks > N) ? (1:N) : (1:N)[randperm(N)[1:randdisks]]
     # Compute Gershgorin disks
     mingd = Inf; maxgd = -Inf
     mingd_center = 0.0; maxgd_center = 0.0
-    for i in 1:size(A)[1]
-        newmingd = real(A[i,i]) - (sum(abs.(view(A,i,:))) - abs(A[i,i]))
+    Bfact = begin
+        if ignoreB
+            I
+        elseif isa(B, UniformScaling)
+            B
+        else
+            factorize(B)
+        end
+    end
+    for i in colidxs
+        col = Bfact \ collect(view(A, :, i))
+        gd_center = real(col[i])
+        newmingd = 2 * gd_center - sum(abs.(col))
         if newmingd < mingd
             mingd = newmingd
-            mingd_center = real(A[i,i])
+            mingd_center = gd_center
         end
-        newmaxgd = real(A[i,i]) + (sum(abs.(view(A,i,:))) - abs(A[i,i]))
+        newmaxgd = sum(abs.(col))
         if newmaxgd > maxgd
             maxgd = newmaxgd
-            maxgd_center = real(A[i,i])
+            maxgd_center = gd_center
         end
     end
     log_tilde(x) = x >= 1 ? log(x) : (x <= -1 ? -log(-x) : 0)
@@ -112,17 +106,67 @@ function reig(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; whic
             append!(sigmas, exp_tilde.(range(log_tilde(maxgd + 1.5), log_tilde(maxgd_center), krylovsteps)))
         end
     elseif which == :SP
-        push!(sigmas, max(abs(eps), mingd - abs(mingd*eps)))
+        append!(sigmas, exp_tilde.(range(0.0, log_tilde(mingd_center), div(krylovsteps,2))) .- abs(eps))
+        # push!(sigmas, max(abs(eps), mingd - abs(mingd*eps)))
     else
         error("Unknown which=$which, choose between (:S, :L, :SP) for smallest, largest, or smallest positive (real) eigenvectors")
     end
     unique!(sigmas)
+    sigmas_final = [sigmas[1]]
+    for i in 2:length(sigmas)
+        if sigmas[i] - sigmas_final[end] >= minstep
+            push!(sigmas_final, sigmas[i])
+        end
+    end
+    return sigmas_final
+end
+
+"""
+`reig(A::AbstractMatrix, [B=I; which=:L, kmaxiter=1000, noise=0, krylovsteps=8, eps=1e-14, reldifftol=0.9])`
+
+Given (symmetric) matrices `A` and `B`, computes a real eigenvalue
+
+``A x = λ B x``.
+
+- `which=:L` corresponds to the largest eigenvalue
+- `which=:S` corresponds to the smallest eigenvalue
+- `which=:SP` corresponds to the smallest positive eigenvalue
+
+Returns a tuple (`λ`,`v`) where `λ<:Real` is the eigenvalue and `v` the eigenvector.
+
+Attempts to do this by shift-and-invert using `Arpack.jl` where the shifts are
+determined by the eigenvalue seeked and the Gershgorin disks of `A`. Uses `Arpack.eigs`
+with `maxiter=kmaxiter`. 
+
+NOTE: A randomized algorithm is used by default for determining Gershgorin disks. This
+is to speed up the case when `size(A,1) ≫ 1`.
+Following paramers relate to selection of shifts:
+
+- `krylovsteps` determines number of logarithmically spaced shifts are attempted
+- `ignoreB` determines whether to approximate Gershgorin disks of `B⁻¹A` or `A`
+- `randdisks` determines number of (random) columns of `B⁻¹A` or `A` to subselect
+to compute Gershgorin disks of, others are ignored. Set `randdisks ≥ size(A,1)` 
+for no randomization.
+- `minstep` determines the minimum step size between logarithmically spaced shifts
+
+Parameter `eps` is used to perturb shift parameters by relative amount to attempt
+to ensure no singular shifts. If the relative gap between the shift and the found
+eigenvalue is greater than `reldifftol`, attempts to re-solve by shifting about 
+the found eigenvalue.
+"""
+function reig(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; which=:L, kmaxiter=1000, noise=0, 
+              krylovsteps=8, eps=1e-14, reldifftol=0.9, randdisks=1000, ignoreB=false, minstep=10.0)
+    sigmas = compute_shifts(A, B, which=which, krylovsteps=krylovsteps, randdisks=randdisks, 
+                            ignoreB=ignoreB, minstep=minstep, eps=eps)
     for (i,sigma) in enumerate(sigmas)
         try
             res = eigs(A, B, which=:LM, sigma=sigma, ritzvec=true, nev=1, maxiter=kmaxiter)
             eg = real(res[1][1]); egval = res[2][:,1]
             close = i == length(sigmas) || (i < length(sigmas) && eg < sigmas[i+1])
             if !close
+                continue
+            end
+            if which == :SP && eg < 0
                 continue
             end
             if abs((sigma - eg) / max(abs(eg),abs(eps))) > reldifftol
@@ -165,14 +209,16 @@ function reig(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; whic
 end
 
 """
-`smallest_sval(A[; kmaxiter=1000, noise=0])`
+`smallest_sval(A[; kmaxiter=1000, noise=0, reigkwargs...])`
 
 Given a matrix `A`, attempts to compute the smallest singular
-value of it by Krylov iteration and inversion around 0. If
-unsuccessful, computes a full, dense svd.
+value of it by Krylov iteration and inversion. If
+unsuccessful, computes a full, dense svd. See docs for 
+`ModelOrderReductionToolkit.reig` for `reigkwargs` options.
+Returns the smallest singular value, `σ_min<:Real`
 """
-function smallest_sval(A::AbstractMatrix; kmaxiter=1000, noise=0)
-    return reig(A'A, which=:SP, kmaxiter=kmaxiter, noise=noise)[1]
+function smallest_sval(A::AbstractMatrix; kmaxiter=1000, noise=0, reigkwargs...)
+    return reig(A'A, which=:SP, kmaxiter=kmaxiter, noise=noise; reigkwargs...)[1]
 end
 
 """
@@ -180,7 +226,8 @@ end
 
 Given a matrix `A`, attempts to compute the largest singular
 value of it by Krylov iteration. If unsuccessful, computes a 
-full, dense svd.
+full, dense svd. Returns the largest singular value, 
+`σ_max<:Real`.
 """
 function largest_sval(A::AbstractMatrix; kmaxiter=1000, noise=0)
     try

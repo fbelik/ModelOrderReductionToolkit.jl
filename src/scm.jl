@@ -135,14 +135,14 @@ struct NNSCM{P} <: SCM where P <: Int
     kdtrees::Dict{SVector{P,Float64},KDTree}
 end
 
-function form_SPD_bounding_boxes(Ap_herm::APArray; noise=0)
+function form_SPD_bounding_boxes(Ap_herm::APArray; noise=0, reigkwargs...)
     B = Tuple{Float64,Float64}[]
     for (d,A) in enumerate(Ap_herm.arrays)
         if noise >= 1
             println("Forming bounding box $d/$(length(Ap_herm.arrays))")
         end
-        mineig,_ = reig(A, which=:S)
-        maxeig,_ = reig(A, which=:L)
+        mineig,_ = reig(A, which=:S, noise=noise; reigkwargs...)
+        maxeig,_ = reig(A, which=:L, noise=noise; reigkwargs...)
         push!(B, (mineig, maxeig))    
     end
     
@@ -152,13 +152,13 @@ function form_SPD_bounding_boxes(Ap_herm::APArray; noise=0)
     return B
 end
 
-function compute_max_svals(Ap_herm::APArray; noise=0)
+function compute_max_svals(Ap_herm::APArray; noise=0, reigkwargs...)
     σ_maxs = Vector{Float64}(undef, length(Ap_herm.arrays))
     for (d,A) in enumerate(Ap_herm.arrays)
         if noise >= 1
             println("Computing maximal singular value $d/$(length(Ap_herm.arrays))")
         end
-        σ_maxs[d] = largest_sval(A)
+        σ_maxs[d] = largest_sval(A, noise=noise, kmaxiter=get(reigkwargs,:kmaxiter,1000))
     end
     if noise >= 1
         println("Finished computing maximal singular values")
@@ -379,10 +379,10 @@ function J(scm::SCM, p, y; Ap=scm.Ap)
     end
 end
 
-function make_σ_UB(scm::SCM, p; noise=0)
+function make_σ_UB(scm::SCM, p; noise=0, reigkwargs...)
     Ap = isa(scm, NNSCM) ? scm.AAp : scm.Ap
     A_UB = Ap(p)
-    σ, x = reig(A_UB, which=:SP, noise=noise)
+    σ, x = reig(A_UB, which=:SP, noise=noise; reigkwargs...)
     QA = length(Ap.arrays)
     y = Vector{Float64}(undef, QA)
     for i in 1:QA
@@ -391,12 +391,12 @@ function make_σ_UB(scm::SCM, p; noise=0)
     return (σ, y)
 end
 
-function make_β_UB(scm::NNSCM, p, pbar; noise=0)
+function make_β_UB(scm::NNSCM, p, pbar; noise=0, reigkwargs...)
     Ap = scm.Ap
     QA = length(Ap.arrays)
     A_pbar = Ap(pbar)
     A_p = (p == pbar) ? A_pbar : Ap(p)
-    β, x = reig(tohermitian(A_pbar' * A_p), (A_pbar' * A_pbar), which=:S, noise=noise)
+    β, x = reig(tohermitian(A_pbar' * A_p), (A_pbar' * A_pbar), which=:S, noise=noise; reigkwargs...)
     y = Vector{Float64}(undef, QA)
     A_pbarx = (A_pbar * x)
     denom = dot(A_pbarx, A_pbarx)
@@ -602,8 +602,8 @@ function set_constraint(scm::ANLSCM, i::Int, j::Int, val::Float64)
     set_normalized_coefficient(con, y[min_ii], y[min_jj], -1 * abs(val))
 end
 
-function add_param!(scm::SPD_SCM, p)
-    σ, y = make_σ_UB(scm, p)
+function add_param!(scm::SPD_SCM, p; noise=0, reigkwargs...)
+    σ, y = make_σ_UB(scm, p, noise=noise; reigkwargs...)
     push!(scm.UBs, p => (σ, y))
     scm.σ_LBs[p] = σ
     data = scm.kdtree.data
@@ -613,13 +613,14 @@ function add_param!(scm::SPD_SCM, p)
 end
 
 """
-`constrain!(scm::SPD_SCM, ps::AbstractVector, ϵ::Real, Mα::Int, Mp::Int[; make_monotonic=true, max_iter=500, noise=0])`
+`constrain!(scm::SPD_SCM, ps::AbstractVector, ϵ::Real, Mα::Int, Mp::Int[; make_monotonic=true, max_iter=500, noise=0, reigkwargs...])`
 
 Constrains `scm` about parameters `ps` to relative gap `ϵ`. `Mα` and `Mp` are the stability and positivity constraints
 respectively. `make_monotonic` ensures LB predictions increase monotonically. `max_iter` is the maximum number of SCM 
-iterations ran. `noise` determines amount of printed output.
+iterations ran. `noise` determines amount of printed output. See documentation of `ModelOrderReductionToolkit.reig` for
+arguments to `reigkwargs`.
 """
-function constrain!(scm::SPD_SCM, ps::AbstractVector, ϵ::Real, Mα::Int, Mp::Int; make_monotonic=true, max_iter=500, noise=0)
+function constrain!(scm::SPD_SCM, ps::AbstractVector, ϵ::Real, Mα::Int, Mp::Int; make_monotonic=true, max_iter=500, noise=0, reigkwargs...)
     if noise >= 1
         println("Beginning SCM Procedure")
         println("----------")
@@ -690,7 +691,7 @@ function constrain!(scm::SPD_SCM, ps::AbstractVector, ϵ::Real, Mα::Int, Mp::In
             return
         end
         # Update for next loop
-        add_param!(scm, p_k)
+        add_param!(scm, p_k; reigkwargs...)
         if !make_monotonic
             empty!(scm.σ_LBs)
         end
@@ -782,8 +783,8 @@ function adapt_constraints!(scm::ANLSCM, p, σ_LB, y_LB, σ_UB, Mα; adaptive_nl
     return σ_LB, y_LB, did_adapt
 end
 
-function add_param!(scm::ANLSCM, p)
-    σ, y = make_σ_UB(scm, p)
+function add_param!(scm::ANLSCM, p; noise=0, reigkwargs...)
+    σ, y = make_σ_UB(scm, p, noise=noise; reigkwargs...)
     push!(scm.UBs, p => (σ, y))
     data = collect(scm.kdtree.data)
     push!(data, p)
@@ -792,14 +793,15 @@ function add_param!(scm::ANLSCM, p)
 end
 
 """
-`constrain!(scm::ANLSCM, ps::AbstractVector, ϵ::Real, Mα::Int[; adaptive_nl_rate=1.1, adaptive_eps_tol=1e-6, max_iter=500, noise=0])`
+`constrain!(scm::ANLSCM, ps::AbstractVector, ϵ::Real, Mα::Int[; adaptive_nl_rate=1.1, adaptive_eps_tol=1e-6, max_iter=500, noise=0, reigkwargs...])`
 
 Constrains `scm` about parameters `ps` to relative gap `ϵ`. `Mα` is the stability constraint. 
 `adaptive_nl_rate` and `adaptive_eps_tol` determine when to and rate at which to loosen nonlinear constraints. 
 Set `adaptive_nl_rate=nothing` for no adaptive updating.
 `max_iter` is the maximum number of SCM iterations ran. `noise` determines amount of printed output.
+See `ModelOrderReductionToolkit.reig` for arguments to `reigkwargs`.
 """
-function constrain!(scm::ANLSCM, ps::AbstractVector, ϵ::Real, Mα::Int; adaptive_nl_rate=1.1, adaptive_eps_tol=1e-6, max_iter=500, noise=0)
+function constrain!(scm::ANLSCM, ps::AbstractVector, ϵ::Real, Mα::Int; adaptive_nl_rate=1.1, adaptive_eps_tol=1e-6, max_iter=500, noise=0, reigkwargs...)
     if noise >= 1
         println("Beginning SCM Procedure")
         println("----------")
@@ -872,7 +874,7 @@ function constrain!(scm::ANLSCM, ps::AbstractVector, ϵ::Real, Mα::Int; adaptiv
                     length(keys(scm.UBs)),ϵ_k)
         end
         # Update for next loop
-        add_param!(scm, p_k)
+        add_param!(scm, p_k; reigkwargs...)
         σ_k, y_k = scm.UBs[p_k]
         # Check if need to adapt
         if !isnothing(adaptive_nl_rate) && σ_LB_k > σ_k + adaptive_eps_tol
@@ -924,16 +926,32 @@ function next_pbar(scm::NNSCM, ps::AbstractVector, ps_left=trues(length(ps)), ϵ
     return (pbar, max_ϵ)
 end
 
-function add_pbar!(scm::NNSCM, pbar; noise=0)
+function add_pbar!(scm::NNSCM, pbar; noise=0, reigkwargs...)
     P = length(pbar)
     pbar = isa(pbar, SVector) ? pbar : SVector{P}(pbar)
     σ², y = make_σ_UB(scm, pbar)
     scm.UBs[pbar] = (sqrt(σ²), y)
-    β, y = make_β_UB(scm, pbar, pbar, noise=noise)
+    β, y = make_β_UB(scm, pbar, pbar, noise=noise; reigkwargs...)
     scm.β_UBs[pbar] = Dict(pbar => (β,y))
     scm.β_LBs[pbar] = Dict(pbar => β)
     scm.σ_LBs[pbar] = sqrt(σ²)
     scm.kdtrees[pbar] = KDTree([pbar])
+    nothing
+end
+
+function add_param!(scm::NNSCM, p, pbar; noise=0, reigkwargs...)
+    β, y = make_β_UB(scm, p, pbar, noise=noise; reigkwargs...)
+    σ_pbar = scm.UBs[pbar][1]
+    if β * σ_pbar > get(scm.σ_LBs, p, -Inf)
+        scm.σ_LBs[p] = β * σ_pbar
+    end
+    scm.β_UBs[pbar][p] = (β, y)
+    scm.β_LBs[pbar][p] = β
+    if β > 1e-10
+        data = scm.kdtrees[pbar].data
+        push!(data, p)
+        scm.kdtrees[pbar] = KDTree(data, reorder=false)
+    end
     nothing
 end
 
@@ -968,7 +986,7 @@ function remove_pbars!(scm::NNSCM, ps::AbstractVector, ϵ_keep=0.2; noise=0)
 end
 
 """
-`constrain!(scm::NNSCM, ps::AbstractVector, pbar::AbstractVector[, ϵ_β=0.8, ϕ=0.0, Mα=20, ps_left=trues(length(ps)); max_iter=500, p_choice=3, noise=0])`
+`constrain!(scm::NNSCM, ps::AbstractVector, pbar::AbstractVector[, ϵ_β=0.8, ϕ=0.0, Mα=20, ps_left=trues(length(ps)); max_iter=500, p_choice=3, noise=0, reigkwargs...])`
 
 Constrains the `pbar`-domain decomposition of the `scm` about parameters `ps`. `ϵ_β` determines the natural-norm relative gap, `ϕ`
 determines the minimum LB prediction required for inclusion in domain, `Mα` is the stability parameter, `ps_left` is a vector of
@@ -978,8 +996,10 @@ which parameters to consider, `max_iter` is maximum number of iterations.
 - `p_choice=1` - Only add parameter with highest natural norm relative gap
 - `p_choice=2` - Only add parameter within domain (`LB ≥ ϕ`) with highest natural norm relative gap
 - `p_choice=3` - Do both of above
+
+See `ModelOrderReductionToolkit.reig` for arguments to `reigkwargs`.
 """
-function constrain!(scm::NNSCM, ps::AbstractVector, pbar::AbstractVector, ϵ_β=0.8, ϕ=0.0, Mα=20, ps_left=trues(length(ps)); max_iter=500, p_choice=3, noise=0)
+function constrain!(scm::NNSCM, ps::AbstractVector, pbar::AbstractVector, ϵ_β=0.8, ϕ=0.0, Mα=20, ps_left=trues(length(ps)); max_iter=500, p_choice=3, noise=0, reigkwargs...)
     current_domain = Set([pbar])
     β_UBs = scm.β_UBs[pbar]
     β_LBs = scm.β_LBs[pbar]
@@ -1069,37 +1089,39 @@ function constrain!(scm::NNSCM, ps::AbstractVector, pbar::AbstractVector, ϵ_β=
         # Update for next loop
         if p_choice in (1,3)
             # Add param with highest ϵ_β
-            β_k, y_k = make_β_UB(scm, p_k, pbar, noise=noise)
-            if β_k * σ_pbar > get(scm.σ_LBs, p_k, -Inf)
-                scm.σ_LBs[p_k] = β_k * σ_pbar
-            end
-            β_UBs[p_k] = (β_k, y_k)
-            β_LBs[p_k] = β_k
-            if β_k > 1e-10
-                data = scm.kdtrees[pbar].data
-                push!(data, p_k)
-                scm.kdtrees[pbar] = KDTree(data, reorder=false)
-            end
+            add_param!(scm, p_k, pbar, noise=noise; reigkwargs...)
+            # β_k, y_k = make_β_UB(scm, p_k, pbar, noise=noise; reigkwargs...)
+            # if β_k * σ_pbar > get(scm.σ_LBs, p_k, -Inf)
+            #     scm.σ_LBs[p_k] = β_k * σ_pbar
+            # end
+            # β_UBs[p_k] = (β_k, y_k)
+            # β_LBs[p_k] = β_k
+            # if β_k > 1e-10
+            #     data = scm.kdtrees[pbar].data
+            #     push!(data, p_k)
+            #     scm.kdtrees[pbar] = KDTree(data, reorder=false)
+            # end
         end
         if !isnothing(p_domain) && p_domain != p_k && ϵ_β_domain > ϵ_β && p_choice in (2,3)
             # Add param in domain with highest ϵ_β
-            β_k, y_k = make_β_UB(scm, p_domain, pbar, noise=noise)
-            if β_k * σ_pbar > get(scm.σ_LBs, p_domain, -Inf)
-                scm.σ_LBs[p_domain] = β_k * σ_pbar
-            end
-            β_UBs[p_domain] = (β_k, y_k)
-            β_LBs[p_domain] = β_k
-            if β_k > 1e-10
-                data = scm.kdtrees[pbar].data
-                push!(data, p_domain)
-                scm.kdtrees[pbar] = KDTree(data, reorder=false)
-            end
+            add_param!(scm, p_domain, pbar, noise=noise; reigkwargs...)
+            # β_k, y_k = make_β_UB(scm, p_domain, pbar, noise=noise; reigkwargs...)
+            # if β_k * σ_pbar > get(scm.σ_LBs, p_domain, -Inf)
+            #     scm.σ_LBs[p_domain] = β_k * σ_pbar
+            # end
+            # β_UBs[p_domain] = (β_k, y_k)
+            # β_LBs[p_domain] = β_k
+            # if β_k > 1e-10
+            #     data = scm.kdtrees[pbar].data
+            #     push!(data, p_domain)
+            #     scm.kdtrees[pbar] = KDTree(data, reorder=false)
+            # end
         end
     end
 end
 
 """
-`constrain!(scm::NNSCM, ps::AbstractVector, ϵ::Real[, ϵ_β=0.8, ϕ=0.0, Mα=20; pruning=false, removals=false, eps_keep=0.2, p_choice=3, max_iter=500, max_inner_iter=500, noise=0])`
+`constrain!(scm::NNSCM, ps::AbstractVector, ϵ::Real[, ϵ_β=0.8, ϕ=0.0, Mα=20; pruning=false, removals=false, eps_keep=0.2, p_choice=3, max_iter=500, max_inner_iter=500, noise=0, reigkwargs...])`
 
 Constrains `scm` about parameters `ps` to relative gap `ϵ` with inner-maximum relative gap `ϵ_β` and domain-inclusion 
 parameter `ϕ`. `Mα` is the stability constraint. `pruning` determines whether or not to exclude parameters from consideration
@@ -1108,7 +1130,7 @@ unnecessary domains at the start of each iteration with tolerance `eps_keep`. Se
 `max_iter` is the maximum number of SCM iterations ran and `max_inner_iter` determines the maximum number of iterations
 per domain decomposition. `noise` determines amount of printed output.
 """
-function constrain!(scm::NNSCM, ps::AbstractVector, ϵ::Real, ϵ_β=0.8, ϕ=0.0, Mα=20; pruning=false, removals=false, eps_keep=0.2, p_choice=3, max_iter=500, max_inner_iter=500, noise=0)
+function constrain!(scm::NNSCM, ps::AbstractVector, ϵ::Real, ϵ_β=0.8, ϕ=0.0, Mα=20; pruning=false, removals=false, eps_keep=0.2, p_choice=3, max_iter=500, max_inner_iter=500, noise=0, reigkwargs...)
     if noise >= 1
         println("Beginning NNSCM Procedure")
     end
@@ -1138,7 +1160,7 @@ function constrain!(scm::NNSCM, ps::AbstractVector, ϵ::Real, ϵ_β=0.8, ϕ=0.0,
             end
             return
         end
-        add_pbar!(scm, pbar, noise=noise)
+        add_pbar!(scm, pbar, noise=noise; reigkwargs...)
         if noise >= 1
             @printf("Domain decomposition number %d: ϵ = %.4e, p_bar = %s\n", 
                         length(keys(scm.β_UBs)), ϵ_pbar, pbar)
