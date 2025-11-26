@@ -156,6 +156,9 @@ the found eigenvalue.
 """
 function reig(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; which=:L, kmaxiter=1000, noise=0, 
               krylovsteps=8, eps=1e-14, reldifftol=0.9, randdisks=1000, ignoreB=false, minstep=10.0)
+    if iszero(A)
+        return 0.0, ones(size(A,1))
+    end
     sigmas = compute_shifts(A, B, which=which, krylovsteps=krylovsteps, randdisks=randdisks, 
                             ignoreB=ignoreB, minstep=minstep, eps=eps)
     for (i,sigma) in enumerate(sigmas)
