@@ -114,7 +114,7 @@ function compute_shifts(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScalin
     unique!(sigmas)
     sigmas_final = [sigmas[1]]
     for i in 2:length(sigmas)
-        if sigmas[i] - sigmas_final[end] >= minstep
+        if abs(sigmas[i] - sigmas_final[end]) >= minstep
             push!(sigmas_final, sigmas[i])
         end
     end
