@@ -396,7 +396,7 @@ function make_β_UB(scm::NNSCM, p, pbar; noise=0, reigkwargs...)
     QA = length(Ap.arrays)
     A_pbar = Ap(pbar)
     A_p = (p == pbar) ? A_pbar : Ap(p)
-    β, x = reig(tohermitian(A_pbar' * A_p), (A_pbar' * A_pbar), which=:S, noise=noise; reigkwargs...)
+    β, x = reig(tohermitian(A_pbar' * A_p), (A_pbar' * A_pbar), which=:S, noise=noise, force_sigma=1.0; reigkwargs...)
     y = Vector{Float64}(undef, QA)
     A_pbarx = (A_pbar * x)
     denom = dot(A_pbarx, A_pbarx)
@@ -692,9 +692,6 @@ function constrain!(scm::SPD_SCM, ps::AbstractVector, ϵ::Real, Mα::Int, Mp::In
         end
         # Update for next loop
         add_param!(scm, p_k; reigkwargs...)
-        if !make_monotonic
-            empty!(scm.σ_LBs)
-        end
     end
 end
 
@@ -1090,32 +1087,10 @@ function constrain!(scm::NNSCM, ps::AbstractVector, pbar::AbstractVector, ϵ_β=
         if p_choice in (1,3)
             # Add param with highest ϵ_β
             add_param!(scm, p_k, pbar, noise=noise; reigkwargs...)
-            # β_k, y_k = make_β_UB(scm, p_k, pbar, noise=noise; reigkwargs...)
-            # if β_k * σ_pbar > get(scm.σ_LBs, p_k, -Inf)
-            #     scm.σ_LBs[p_k] = β_k * σ_pbar
-            # end
-            # β_UBs[p_k] = (β_k, y_k)
-            # β_LBs[p_k] = β_k
-            # if β_k > 1e-10
-            #     data = scm.kdtrees[pbar].data
-            #     push!(data, p_k)
-            #     scm.kdtrees[pbar] = KDTree(data, reorder=false)
-            # end
         end
         if !isnothing(p_domain) && p_domain != p_k && ϵ_β_domain > ϵ_β && p_choice in (2,3)
             # Add param in domain with highest ϵ_β
             add_param!(scm, p_domain, pbar, noise=noise; reigkwargs...)
-            # β_k, y_k = make_β_UB(scm, p_domain, pbar, noise=noise; reigkwargs...)
-            # if β_k * σ_pbar > get(scm.σ_LBs, p_domain, -Inf)
-            #     scm.σ_LBs[p_domain] = β_k * σ_pbar
-            # end
-            # β_UBs[p_domain] = (β_k, y_k)
-            # β_LBs[p_domain] = β_k
-            # if β_k > 1e-10
-            #     data = scm.kdtrees[pbar].data
-            #     push!(data, p_domain)
-            #     scm.kdtrees[pbar] = KDTree(data, reorder=false)
-            # end
         end
     end
 end
