@@ -122,7 +122,7 @@ function compute_shifts(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScalin
 end
 
 """
-`reig(A::AbstractMatrix, [B=I; which=:L, kmaxiter=1000, noise=0, krylovsteps=8, eps=1e-14, reldifftol=0.9])`
+`reig(A::AbstractMatrix, [B=I; which=:L, kmaxiter=1000, noise=0, krylovsteps=8, eps=1e-14, reldifftol=0.9, absdifftol=0.9, randdisks=1000, ignoreB=false, minstep=10.0, force_sigma=nothing])`
 
 Given (symmetric) matrices `A` and `B`, computes a real eigenvalue
 
@@ -148,31 +148,45 @@ Following paramers relate to selection of shifts:
 to compute Gershgorin disks of, others are ignored. Set `randdisks ≥ size(A,1)` 
 for no randomization.
 - `minstep` determines the minimum step size between logarithmically spaced shifts
+- `force_sigma` forces trying shift and invert about this value if not `nothing`
 
 Parameter `eps` is used to perturb shift parameters by relative amount to attempt
 to ensure no singular shifts. If the relative gap between the shift and the found
-eigenvalue is greater than `reldifftol`, attempts to re-solve by shifting about 
-the found eigenvalue.
+eigenvalue is greater than `reldifftol` and the absolute gap is greater than `absdifftol`,
+attempts to re-solve by shifting about the found eigenvalue.
 """
 function reig(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; which=:L, kmaxiter=1000, noise=0, 
-              krylovsteps=8, eps=1e-14, reldifftol=0.9, randdisks=1000, ignoreB=false, minstep=10.0)
+              krylovsteps=8, eps=1e-14, reldifftol=0.9, absdifftol=2.0, randdisks=1000, ignoreB=false, minstep=10.0, force_sigma=nothing)
     if iszero(A)
         return 0.0, ones(size(A,1))
+    elseif A == B
+        return 1.0, ones(size(A,1))
     end
     sigmas = compute_shifts(A, B, which=which, krylovsteps=krylovsteps, randdisks=randdisks, 
                             ignoreB=ignoreB, minstep=minstep, eps=eps)
+    if isa(force_sigma, Real)
+        push!(sigmas, force_sigma)
+        unique!(sigmas)
+        sort!(sigmas, rev = (which==:L))
+    end
     for (i,sigma) in enumerate(sigmas)
         try
             res = eigs(A, B, which=:LM, sigma=sigma, ritzvec=true, nev=1, maxiter=kmaxiter)
             eg = real(res[1][1]); egval = res[2][:,1]
-            close = i == length(sigmas) || (i < length(sigmas) && eg < sigmas[i+1])
+            # Close if eg is not beyond next shift value
+            close = i == length(sigmas)
+            if i < length(sigmas) && sigmas[i] < sigmas[i+1]
+                close |= eg < sigmas[i+1]
+            elseif i < length(sigmas) && sigmas[i] > sigmas[i+1]
+                close |= eg > sigmas[i+1]
+            end
             if !close
                 continue
             end
             if which == :SP && eg < 0
                 continue
             end
-            if abs((sigma - eg) / max(abs(eg),abs(eps))) > reldifftol
+            if abs((sigma - eg) / max(abs(eg),abs(eps))) > reldifftol && abs(sigma - eg) > absdifftol
                 sigma = eg - abs(eg*eps)
                 # Try again to recenter about eg
                 res = eigs(A, B, which=:LM, sigma=sigma, ritzvec=true, nev=1, maxiter=kmaxiter)
@@ -221,7 +235,7 @@ unsuccessful, computes a full, dense svd. See docs for
 Returns the smallest singular value, `σ_min<:Real`
 """
 function smallest_sval(A::AbstractMatrix; kmaxiter=1000, noise=0, reigkwargs...)
-    return reig(A'A, which=:SP, kmaxiter=kmaxiter, noise=noise; reigkwargs...)[1]
+    return sqrt(reig(A'A, which=:SP, kmaxiter=kmaxiter, noise=noise; reigkwargs...)[1])
 end
 
 """
