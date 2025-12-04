@@ -51,10 +51,10 @@ struct StandardResidualNormComputer{T} <: ResidualNormComputer{T}
     QA::Int
     Qb::Int
     V::VectorOfVectors{T}
-    X::Union{Matrix,UniformScaling}
+    X::Union{AbstractMatrix,UniformScaling}
 end
 
-function StandardResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorOfVectors,Nothing}=nothing,X::Union{Nothing,Matrix,UniformScaling}=nothing)
+function StandardResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorOfVectors,Nothing}=nothing,X::Union{Nothing,AbstractMatrix,UniformScaling}=nothing)
     if isnothing(V)
         T1 = typeof(prod(zero.(eltype.(Ap.arrays))))
         T2 = typeof(prod(zero.(eltype.(bp.arrays))))
@@ -213,10 +213,10 @@ struct ProjectionResidualNormComputer{T} <: ResidualNormComputer{T}
     QA::Int
     Qb::Int
     V::VectorOfVectors{T}
-    X::Union{Matrix,UniformScaling}
+    X::Union{AbstractMatrix,UniformScaling}
 end
 
-function ProjectionResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorOfVectors,Nothing}=nothing,X::Union{Nothing,Matrix,UniformScaling}=nothing)
+function ProjectionResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorOfVectors,Nothing}=nothing,X::Union{Nothing,AbstractMatrix,UniformScaling}=nothing)
     if isnothing(V)
         T1 = typeof(prod(zero.(eltype.(Ap.arrays))))
         T2 = typeof(prod(zero.(eltype.(bp.arrays))))
