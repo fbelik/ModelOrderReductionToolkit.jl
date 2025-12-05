@@ -38,9 +38,10 @@ using LinearAlgebra
     @test length(keys(scms[3].UBs)) < length(params) / 2
     @test length(keys(scms[4].UBs)) < length(params) / 2
     for scm in scms
-        # Test that SCM has sufficiently small ϵ
-        errs = scm.(params, which=:E)
-        @test maximum(errs) <= SCM_EPS
+        # Test that SCM has sufficiently small ϵ but not negative
+        relerrs = scm.(params, which=:E)
+        @test maximum(relerrs) <= SCM_EPS
+        @test minimum(relerrs) > -1e-2
         error_estimator = StabilityResidualErrorEstimator(model, scm)
         wg_reductor = WGReductor(model, error_estimator)
         add_to_rb!(wg_reductor, params, r, eps=0)
