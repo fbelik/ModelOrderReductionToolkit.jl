@@ -137,9 +137,17 @@ function shift_invert_attempt(A::AbstractMatrix, B::Union{AbstractMatrix,Uniform
         return 0.0, zeros(1), false
     end
     if egwith == :arnoldimethod
+        # Seems that `\` for Cholesky factorization not implemented until 1.12
+        factorize_method = begin
+            if VERSION.major <= 1 && VERSION.minor < 12
+                lu
+            else
+                factorize
+            end
+        end
         if isnothing(sigma)
             whichhere = which == :L ? :LR : :SR
-            Binvmap = isa(B, UniformScaling) ? LinearMap(inv(B), size(A,1)) : InverseMap(factorize(B))
+            Binvmap = isa(B, UniformScaling) ? LinearMap(inv(B), size(A,1)) : InverseMap(factorize_method(B))
             F = Binvmap * LinearMap(A)
             res = partialschur(F, which=whichhere, nev=1, restarts=restarts)
             if res[2].converged
@@ -154,7 +162,7 @@ function shift_invert_attempt(A::AbstractMatrix, B::Union{AbstractMatrix,Uniform
             end
         else
             try
-                F = InverseMap(factorize(A - sigma * B)) * (isa(B, UniformScaling) ? LinearMap(B, size(A,1)) : LinearMap(B))
+                F = InverseMap(factorize_method(A - sigma * B)) * (isa(B, UniformScaling) ? LinearMap(B, size(A,1)) : LinearMap(B))
                 res = partialschur(F, which=:LM, nev=1, restarts=restarts)
                 if res[2].converged
                     egval = 1 ./ real(res[1].R[1]) .+ sigma
