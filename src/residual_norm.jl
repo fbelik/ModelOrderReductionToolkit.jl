@@ -64,11 +64,8 @@ function StandardResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorOfV
         T = eltype(V)
     end
     Ais = Ap.arrays
-    makeθAi = Ap.makeθi
     bis = bp.arrays
-    makeθbi = bp.makeθi
 
-    n = length(bis[1])
     QA = length(Ais)
     Qb = length(bis)
     # Form X if nothing
@@ -229,7 +226,6 @@ function ProjectionResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorO
     Ais = Ap.arrays
     bis = bp.arrays
 
-    n = length(bis[1])
     QA = length(Ais)
     Qb = length(bis)
     # Form X if nothing
