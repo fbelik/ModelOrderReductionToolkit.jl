@@ -1142,7 +1142,7 @@ function constrain!(scm::NNSCM, ps::AbstractVector, ϵ::Real, ϵ_β=0.8, ϕ=0.0,
         end
         # Perform NNSCM about pbar
         constrain!(scm, ps, pbar, ϵ_β, ϕ, Mα, ps_left, max_iter=max_inner_iter,
-                   p_choice=p_choice, noise=noise)
+                   p_choice=p_choice, noise=noise; reigkwargs...)
     end
 end
 
