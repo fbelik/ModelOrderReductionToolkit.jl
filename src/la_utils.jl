@@ -59,7 +59,7 @@ function full_lu(A::AbstractMatrix;steps::Int=-1)
     return FullLU(P,L,U,Q)
 end
 
-function compute_shifts(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; which=:L, randdisks=1000, ignoreB=false, minstep=10.0, krylovsteps=8, eps=1e-14)
+function compute_shifts(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; which=:L, randdisks=1000, ignoreB=false, minstep=1.0, krylovsteps=8, eps=1e-14)
     N = size(A,1)
     colidxs = (randdisks > N) ? (1:N) : (1:N)[randperm(N)[1:randdisks]]
     # Compute Gershgorin disks
@@ -88,26 +88,36 @@ function compute_shifts(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScalin
             maxgd_center = gd_center
         end
     end
+    # To avoid zero pivot error 
+    mingd *= (mingd < 0 ? (1 + eps) : (1 - eps))
+    mingd_center *= (mingd_center < 0 ? (1 + eps) : (1 - eps))
+    if -1 <= mingd && mingd <= 1
+        mingd = -1 - eps
+    end
+    maxgd *= (maxgd < 0 ? (1 - eps) : (1 + eps))
+    maxgd_center *= (maxgd_center < 0 ? (1 - eps) : (1 + eps))
+    if -1 <= maxgd && maxgd <= 1
+        maxgd = 1 + eps
+    end
     log_tilde(x) = x >= 1 ? log(x) : (x <= -1 ? -log(-x) : 0)
     exp_tilde(x) = x > 0 ? exp(x) : (x < 0 ? -exp(-x) : 0)
     sigmas = Float64[]
     if which == :S
         if mingd < 0 && 0 < mingd_center
-            append!(sigmas, exp_tilde.(range(log_tilde(mingd - 1.5), 0.0, div(krylovsteps,2))))
+            append!(sigmas, exp_tilde.(range(log_tilde(mingd), 0.0, div(krylovsteps,2))))
             append!(sigmas, exp_tilde.(range(0.0, log_tilde(mingd_center), div(krylovsteps,2))))
         else
-            append!(sigmas, exp_tilde.(range(log_tilde(mingd - 1.5), log_tilde(mingd_center), krylovsteps)))
+            append!(sigmas, exp_tilde.(range(log_tilde(mingd), log_tilde(mingd_center), krylovsteps)))
         end
     elseif which == :L
         if maxgd > 0 && 0 > maxgd_center
-            append!(sigmas, exp_tilde.(range(log_tilde(maxgd + 1.5), 0.0, div(krylovsteps,2))))
+            append!(sigmas, exp_tilde.(range(log_tilde(maxgd), 0.0, div(krylovsteps,2))))
             append!(sigmas, exp_tilde.(range(0.0, log_tilde(maxgd_center), div(krylovsteps,2))))
         else
-            append!(sigmas, exp_tilde.(range(log_tilde(maxgd + 1.5), log_tilde(maxgd_center), krylovsteps)))
+            append!(sigmas, exp_tilde.(range(log_tilde(maxgd), log_tilde(maxgd_center), krylovsteps)))
         end
     elseif which == :SP
-        append!(sigmas, exp_tilde.(range(0.0, log_tilde(mingd_center), div(krylovsteps,2))) .- abs(eps))
-        # push!(sigmas, max(abs(eps), mingd - abs(mingd*eps)))
+        append!(sigmas, exp_tilde.(range(0.0, log_tilde(mingd_center > 0 ? mingd_center : max(0.0, maxgd_center)), div(krylovsteps,2))) .- abs(eps))
     else
         error("Unknown which=$which, choose between (:S, :L, :SP) for smallest, largest, or smallest positive (real) eigenvectors")
     end
@@ -119,6 +129,66 @@ function compute_shifts(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScalin
         end
     end
     return sigmas_final
+end
+
+# Assumes the problem is hermitian/symmetric, i.e. eigenvalues are real
+function shift_invert_attempt(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I, egwith=:arnoldimethod; which=:L, sigma=nothing, kmaxiter=1000, restarts=100, noise=0)
+    if isnothing(sigma) && which == :SP
+        return 0.0, zeros(1), false
+    end
+    if egwith == :arnoldimethod
+        if isnothing(sigma)
+            whichhere = which == :L ? :LR : :SR
+            Binvmap = isa(B, UniformScaling) ? LinearMap(inv(B), size(A,1)) : InverseMap(factorize(B))
+            F = Binvmap * LinearMap(A)
+            res = partialschur(F, which=whichhere, nev=1, restarts=restarts)
+            if res[2].converged
+                egval = real(res[1].R[1])
+                egvec = view(res[1].Q,:,1)
+                return egval, egvec, true
+            else
+                if noise >= 2
+                    println("Direct eigenvalue iteration did not converge")
+                end
+                return 0.0, zeros(0), false
+            end
+        else
+            try
+                F = InverseMap(factorize(A - sigma * B)) * (isa(B, UniformScaling) ? LinearMap(B, size(A,1)) : LinearMap(B))
+                res = partialschur(F, which=:LM, nev=1, restarts=restarts)
+                if res[2].converged
+                    egval = 1 ./ real(res[1].R[1]) .+ sigma
+                    egvec = view(res[1].Q,:,1)
+                    return egval, egvec, true
+                else
+                    if noise >= 2
+                        @printf("Eigenvalue iteration did not converge about sigma=%.2e\n", sigma)
+                    end
+                    return 0.0, zeros(0), false
+                end
+            catch e
+                if noise >= 2
+                    println("Eigenvalue iteration errored with error $e")
+                end
+                return 0.0, zeros(0), false
+            end
+        end
+    elseif egwith == :arpack
+        whichhere = isnothing(sigma) ? (which == :L ? :LR : :SR) : :LM
+        try
+            res = eigs(A, B, sigma=sigma, which=whichhere, ritzvec=true, nev=1, maxiter=kmaxiter)
+            egval = real(res[1][1])
+            egvec = res[2][:,1]
+            return egval, egvec, true
+        catch
+            if noise >= 2
+                println("Eigenvalue iteration errored with error $e")
+            end
+            return 0.0, zeros(0), false
+        end
+    else
+        error("Unknown argument egwith=$egwith; must be :arnoldimethod or :arpack")
+    end
 end
 
 """
@@ -155,12 +225,18 @@ to ensure no singular shifts. If the relative gap between the shift and the foun
 eigenvalue is greater than `reldifftol` and the absolute gap is greater than `absdifftol`,
 attempts to re-solve by shifting about the found eigenvalue.
 """
-function reig(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; which=:L, kmaxiter=1000, noise=0, 
-              krylovsteps=8, eps=1e-14, reldifftol=0.9, absdifftol=2.0, randdisks=1000, ignoreB=false, minstep=10.0, force_sigma=nothing)
+function reig(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; which=:L, kmaxiter=1000, noise=0, egwith=:arnoldimethod, restarts=100,
+              krylovsteps=8, eps=1e-14, randdisks=1000, ignoreB=false, minstep=1.0, force_sigma=nothing)
     if iszero(A)
         return 0.0, ones(size(A,1))
     elseif A == B
         return 1.0, ones(size(A,1))
+    end
+    if which == :L || which == :S
+        eg, egval, succeeded = shift_invert_attempt(A, B, egwith, which=which, sigma=nothing, kmaxiter=kmaxiter, restarts=restarts, noise=noise)
+        if succeeded
+            return eg, egval
+        end
     end
     sigmas = compute_shifts(A, B, which=which, krylovsteps=krylovsteps, randdisks=randdisks, 
                             ignoreB=ignoreB, minstep=minstep, eps=eps)
@@ -170,46 +246,27 @@ function reig(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; whic
         sort!(sigmas, rev = (which==:L))
     end
     for (i,sigma) in enumerate(sigmas)
-        try
-            res = eigs(A, B, which=:LM, sigma=sigma, ritzvec=true, nev=1, maxiter=kmaxiter)
-            eg = real(res[1][1]); egval = res[2][:,1]
-            # Close if eg is not beyond next shift value
-            close = i == length(sigmas)
-            if i < length(sigmas) && sigmas[i] < sigmas[i+1]
-                close |= eg < sigmas[i+1]
-            elseif i < length(sigmas) && sigmas[i] > sigmas[i+1]
-                close |= eg > sigmas[i+1]
-            end
-            if !close
-                continue
-            end
-            if which == :SP && eg < 0
-                continue
-            end
-            if abs((sigma - eg) / max(abs(eg),abs(eps))) > reldifftol && abs(sigma - eg) > absdifftol
-                sigma = eg - abs(eg*eps)
-                # Try again to recenter about eg
-                res = eigs(A, B, which=:LM, sigma=sigma, ritzvec=true, nev=1, maxiter=kmaxiter)
-                eg = real(res[1][1]); egval = res[2][:,1]
-                return eg, egval
-            else
-                return eg, egval
-            end
-        catch e
-            if isa(e, SingularException) || isa(e, ZeroPivotException) || isa(e,XYAUPD_Exception)
-                # Try at new value
-                continue
-            else
-                # Did not converge
-                error(e)
-            end
+        eg, egval, succeeded = shift_invert_attempt(A, B, egwith, which=which, sigma=sigma, kmaxiter=kmaxiter, restarts=restarts, noise=noise)
+        if !succeeded
+            continue
         end
-        if noise >= 2
-            @printf("Krylov iteration did not converge with shift-invert σ=%.2e, reducing\n",mingd)
+        # Close if eg is not beyond next shift value
+        close = i == length(sigmas)
+        if i < length(sigmas) && sigmas[i] < sigmas[i+1]
+            close |= eg < sigmas[i+1]
+        elseif i < length(sigmas) && sigmas[i] > sigmas[i+1]
+            close |= eg > sigmas[i+1]
         end
+        if !close
+            continue
+        end
+        if which == :SP && eg < 0
+            continue
+        end
+        return eg, egval
     end
     if noise >= 1
-        println("Warning: Krylov iteration did not converge, computing full eigen, may be recommended to increase kmaxiter (currently $(kmaxiter))")
+        println("Warning: Eigenvalue iteration did not converge, computing full eigen, may be recommended to update reigkwargs")
     end
     # Perform brute eigen
     res = eigen(issparse(A) ? collect(A) : A, isa(B, UniformScaling) ? B(size(A,1)) : issparse(B) ? collect(B) : B)
@@ -234,8 +291,8 @@ unsuccessful, computes a full, dense svd. See docs for
 `ModelOrderReductionToolkit.reig` for `reigkwargs` options.
 Returns the smallest singular value, `σ_min<:Real`
 """
-function smallest_sval(A::AbstractMatrix; kmaxiter=1000, noise=0, reigkwargs...)
-    return sqrt(reig(A'A, which=:SP, kmaxiter=kmaxiter, noise=noise; reigkwargs...)[1])
+function smallest_sval(A::AbstractMatrix; reigkwargs...)
+    return sqrt(reig(A'A, which=:SP; reigkwargs...)[1])
 end
 
 """
@@ -246,15 +303,8 @@ value of it by Krylov iteration. If unsuccessful, computes a
 full, dense svd. Returns the largest singular value, 
 `σ_max<:Real`.
 """
-function largest_sval(A::AbstractMatrix; kmaxiter=1000, noise=0)
-    try
-        return svds(A, maxiter=kmaxiter, nsv=1)[1].S[1]
-    catch _
-        if noise >= 1
-            println("svds did not converge, computing full SVD")
-        end
-        return maximum(svd(issparse(A) ? collect(A) : A).S)
-    end
+function largest_sval(A::AbstractMatrix; reigkwargs...)
+    return sqrt(reig(A'A, which=:L; reigkwargs...)[1])
 end
 
 """
