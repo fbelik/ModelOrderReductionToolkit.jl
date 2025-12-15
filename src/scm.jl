@@ -1,31 +1,31 @@
 const LP_MAX_RESCALE = 1e6
 
-abstract type SCM <: Function end
+abstract type AbstractSCM <: Function end
 
-function Base.show(io::Core.IO, scm::SCM)
+function Base.show(io::Core.IO, scm::AbstractSCM)
     res = "SCM Object for matrix "
     print(io, res)
     print(io, scm.Ap)
 end
 
 """
-`SPD_SCM{P} <: SCM <: Function where P <: Int`
+`SCM{P} <: AbstractSCM <: Function where P <: Int`
 
 An SCM object for a SPD APArray matrix `Ap`. For non-SPD 
 matrix `Ap`, can form Grammian matrix `Ap'Ap` and perform
 SCM on it.
 
-`scm = SPD_SCM(Ap::APArray, ps::AbstractVector[, ϵ=0.8, Mα=20, Mp=0; coercive=false, 
+`scm = SCM(Ap::APArray, ps::AbstractVector[, ϵ=0.8, Mα=20, Mp=0; coercive=false, 
 optimizer=HiGHS.Optimizer, lp_attrs=Dict(), make_monotonic=true, max_iter=500, noise=0])`
 
-Constructs an `SPD_SCM` object for `Ap` about parameter values `ps`. If `coercive=false`,
-then constructs the Grammian matrix `Ap(p)'Ap(p)`. If `Ap(p)` is SPD for all parameters `p`,
-then set `coercive=true`. Constrains the `SPD_SCM` object to a relative gap of `ϵ`. If 
+Constructs an `SCM` object for `Ap` about parameter values `ps`. If `coercive=false`,
+then constructs the Grammian matrix `Ap(p)'Ap(p)`. If `hermitianpart(Ap(p))` is positive definite
+for all `p`, then set `coercive=true`. Constrains the `SCM` object to a relative gap of `ϵ`. If 
 set `ϵ=nothing`, then does not perform constraining. `Mα` and `Mp` are the stability and 
 positivity parameters, `optimizer` is the optimizer used for solving LPs in JuMP. `lp_attrs`
 can contain additional attributes to pass into the JuMP model (optimizer dependent). 
-`make_monotonic` ensures that the lower-bound predictions increase monotonically. `max_iter` is the maximum number
-of SCM constraining iterations. `noise` determines the amount of printed output.
+`make_monotonic` ensures that the lower-bound predictions increase monotonically. `max_iter` 
+is the maximum number of SCM constraining iterations. `noise` determines the amount of printed output.
 
 The `scm` object may be used by calling it on a parameter vector
 
@@ -37,12 +37,12 @@ Which returns the following:
 - `which=:U` - The upper-bound prediction at `p`
 - `which=:E` - The relative gap `1 - LB/UB` at `p`
 """
-mutable struct SPD_SCM{P} <: SCM where P <: Int
+mutable struct SCM{P} <: AbstractSCM where P <: Int
     const Ap::APArray
     const B::Vector{Tuple{Float64,Float64}}
     const UBs::Dict{SVector{P,Float64},Tuple{Float64,Vector{Float64}}}
     const σ_LBs::Dict{SVector{P,Float64},Float64}
-    const spd::Bool
+    const coercive::Bool
     const lp_model::JuMP.Model
     const optimizer
     const R::Float64
@@ -51,7 +51,7 @@ mutable struct SPD_SCM{P} <: SCM where P <: Int
 end
 
 """
-`ANLSCM{P} <: SCM <: Function where P <: Int`
+`ANLSCM{P} <: AbstractSCM <: Function where P <: Int`
 
 An SCM object for an APArray matrix `Ap` which uses nonlinear
 constraining. 
@@ -77,7 +77,7 @@ Which returns the following:
 - `which=:U` - The upper-bound prediction at `p`
 - `which=:E` - The relative gap `1 - LB/UB` at `p`
 """
-mutable struct ANLSCM{P} <: SCM where P <: Int
+mutable struct ANLSCM{P} <: AbstractSCM where P <: Int
     const Ap::APArray
     const B::Vector{Tuple{Float64,Float64}}
     const UBs::Dict{SVector{P,Float64},Tuple{Float64,Vector{Float64}}}
@@ -89,7 +89,7 @@ mutable struct ANLSCM{P} <: SCM where P <: Int
 end
 
 """
-`NNSCM{P} <: SCM <: Function where P <: Int`
+`NNSCM{P} <: AbstractSCM <: Function where P <: Int`
 
 An SCM object for an APArray matrix `Ap` which uses domain decomposition
 and works in a natural norm. See Huynh et al., 2010, A natural norm...
@@ -121,7 +121,7 @@ Which returns the following:
 If `pbar` is not nothing, then if `pbar in keys(scm.UBs)`, solves the above restricted
 to the domain decomposition about `pbar`.
 """
-struct NNSCM{P} <: SCM where P <: Int
+struct NNSCM{P} <: AbstractSCM where P <: Int
     Ap::APArray
     AAp::APArray
     σ_maxs::Vector{Float64}
@@ -216,7 +216,7 @@ function tohermitian(A::AbstractMatrix)
     return 0.5 .* (A .+ A')
 end
 
-function SPD_SCM(Ap::APArray, ps::AbstractVector, ϵ::Union{Real,Nothing}=0.8, Mα::Int=20, Mp::Int=0; 
+function SCM(Ap::APArray, ps::AbstractVector, ϵ::Union{Real,Nothing}=0.8, Mα::Int=20, Mp::Int=0; 
                  coercive=false, optimizer=HiGHS.Optimizer, lp_attrs=Dict(), make_monotonic=true, max_iter=500, noise=0)
     Q, Ap_herm = begin
         if coercive
@@ -253,7 +253,7 @@ function SPD_SCM(Ap::APArray, ps::AbstractVector, ϵ::Union{Real,Nothing}=0.8, M
     R = max(1.0, R / LP_MAX_RESCALE)
     model = make_JuMP_model(optimizer, Q, B, R, lp_attrs, noise=noise)
     P = length(ps[1])
-    scm = SPD_SCM{P}(Ap_herm, B, Dict(), Dict(), coercive, model, optimizer, R, KDTree(zeros(P,0)), KDTree(zeros(P,0)))
+    scm = SCM{P}(Ap_herm, B, Dict(), Dict(), coercive, model, optimizer, R, KDTree(zeros(P,0)), KDTree(zeros(P,0)))
     if !isnothing(ϵ)
         constrain!(scm, ps, ϵ, Mα, Mp, make_monotonic=make_monotonic, max_iter=max_iter, noise=noise)
     end
@@ -334,14 +334,14 @@ function NNSCM(Ap::APArray, ps::AbstractVector, ϵ::Union{Real,Nothing}=0.8, ϵ_
 end
 
 """
-`copy_scm(scm::SPD_SCM[; lp_attrs=Dict(), noise=0])`
+`copy_scm(scm::SCM[; lp_attrs=Dict(), noise=0])`
 
 Makes a copy of `scm` and provides `lp_attrs` to the new JuMP model.
 """
-function copy_scm(scm::SPD_SCM{P}; lp_attrs=Dict(), noise=0) where P
+function copy_scm(scm::SCM{P}; lp_attrs=Dict(), noise=0) where P
     Q = length(scm.Ap.arrays)
     model = make_JuMP_model(scm.optimizer, Q, scm.B, scm.R, lp_attrs, noise=noise)
-    return SPD_SCM{P}(scm.Ap, scm.B, copy(scm.UBs), copy(scm.σ_LBs), scm.spd, model, scm.optimizer, scm.R, deepcopy(scm.kdtree), deepcopy(scm.pos_kdtree))
+    return SCM{P}(scm.Ap, scm.B, copy(scm.UBs), copy(scm.σ_LBs), scm.coercive, model, scm.optimizer, scm.R, deepcopy(scm.kdtree), deepcopy(scm.pos_kdtree))
 end
 
 """
@@ -367,7 +367,7 @@ function copy_scm(scm::NNSCM{P}; lp_attrs=Dict(), noise=0)  where P
     return NNSCM{P}(scm.Ap, scm.AAp, scm.σ_maxs, deepcopy(scm.β_UBs), deepcopy(scm.UBs), deepcopy(scm.β_LBs), deepcopy(scm.σ_LBs), model, scm.optimizer, scm.R, deepcopy(scm.kdtrees))
 end
 
-function J(scm::SCM, p, y; Ap=scm.Ap)
+function J(scm::AbstractSCM, p, y; Ap=scm.Ap)
     if Ap.precompθ
         return dot(Ap.makeθi(p), y)
     else
@@ -379,7 +379,7 @@ function J(scm::SCM, p, y; Ap=scm.Ap)
     end
 end
 
-function make_σ_UB(scm::SCM, p; noise=0, reigkwargs...)
+function make_σ_UB(scm::AbstractSCM, p; noise=0, reigkwargs...)
     Ap = isa(scm, NNSCM) ? scm.AAp : scm.Ap
     A_UB = Ap(p)
     σ, x = reig(A_UB, which=:SP, noise=noise; reigkwargs...)
@@ -406,7 +406,7 @@ function make_β_UB(scm::NNSCM, p, pbar; noise=0, reigkwargs...)
     return (β, y)
 end
 
-function solve_LB(scm::SPD_SCM, p, Mα=20, Mp=0; noise=0)
+function solve_LB(scm::SCM, p, Mα=20, Mp=0; noise=0)
     model = scm.lp_model
     y = all_variables(model)
     # Remove old stability and positivity constraints
@@ -536,7 +536,7 @@ function solve_LB(scm::NNSCM, p, pbar, Mα=20; noise=0)
     return (β_LB, y_LB)
 end
 
-function solve_UB(scm::SCM, p)
+function solve_UB(scm::AbstractSCM, p)
     σ_UB = Inf
     for (_,y) in values(scm.UBs)
         Jval = J(scm, p, y, Ap=(isa(scm,NNSCM) ? scm.AAp : scm.Ap))
@@ -602,7 +602,7 @@ function set_constraint(scm::ANLSCM, i::Int, j::Int, val::Float64)
     set_normalized_coefficient(con, y[min_ii], y[min_jj], -1 * abs(val))
 end
 
-function add_param!(scm::SPD_SCM, p; noise=0, reigkwargs...)
+function add_param!(scm::SCM, p; noise=0, reigkwargs...)
     σ, y = make_σ_UB(scm, p, noise=noise; reigkwargs...)
     push!(scm.UBs, p => (σ, y))
     scm.σ_LBs[p] = σ
@@ -613,14 +613,14 @@ function add_param!(scm::SPD_SCM, p; noise=0, reigkwargs...)
 end
 
 """
-`constrain!(scm::SPD_SCM, ps::AbstractVector, ϵ::Real, Mα::Int, Mp::Int[; make_monotonic=true, max_iter=500, noise=0, reigkwargs...])`
+`constrain!(scm::SCM, ps::AbstractVector, ϵ::Real, Mα::Int, Mp::Int[; make_monotonic=true, max_iter=500, noise=0, reigkwargs...])`
 
 Constrains `scm` about parameters `ps` to relative gap `ϵ`. `Mα` and `Mp` are the stability and positivity constraints
 respectively. `make_monotonic` ensures LB predictions increase monotonically. `max_iter` is the maximum number of SCM 
 iterations ran. `noise` determines amount of printed output. See documentation of `ModelOrderReductionToolkit.reig` for
 arguments to `reigkwargs`.
 """
-function constrain!(scm::SPD_SCM, ps::AbstractVector, ϵ::Real, Mα::Int, Mp::Int; make_monotonic=true, max_iter=500, noise=0, reigkwargs...)
+function constrain!(scm::SCM, ps::AbstractVector, ϵ::Real, Mα::Int, Mp::Int; make_monotonic=true, max_iter=500, noise=0, reigkwargs...)
     if noise >= 1
         println("Beginning SCM Procedure")
         println("----------")
@@ -655,7 +655,7 @@ function constrain!(scm::SPD_SCM, ps::AbstractVector, ϵ::Real, Mα::Int, Mp::In
             σ_UB = solve_UB(scm, p)
             ## Compute ϵ_k
             ϵ_disc = 1 - σ_LB / σ_UB
-            if !scm.spd
+            if !scm.coercive
                 ϵ_disc = (ϵ_disc <= 1) ? 1-sqrt(1-ϵ_disc) : ϵ_disc
             end
             if ϵ_disc > ϵ_k
@@ -1146,10 +1146,10 @@ function constrain!(scm::NNSCM, ps::AbstractVector, ϵ::Real, ϵ_β=0.8, ϕ=0.0,
     end
 end
 
-function (scm::SPD_SCM)(p, Mα=20, Mp=0; which=:L, noise=0)
+function (scm::SCM)(p, Mα=20, Mp=0; which=:L, noise=0)
     if which == :U
         σ_UB = solve_UB(scm, p)
-        if !scm.spd
+        if !scm.coercive
             σ_UB = sqrt(max(0.0,σ_UB))
         end
         return σ_UB
@@ -1164,7 +1164,7 @@ function (scm::SPD_SCM)(p, Mα=20, Mp=0; which=:L, noise=0)
             scm.σ_LBs[p] = σ_LB_p
             σ_LB_p
         end)
-        if !scm.spd
+        if !scm.coercive
             σ_LB = sqrt(max(0.0,σ_LB))
         end
         return σ_LB

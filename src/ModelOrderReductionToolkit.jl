@@ -50,7 +50,6 @@ export addCol!
 export removeCol!
 # scm.jl exports
 export SCM
-export SPD_SCM
 export ANLSCM
 export NNSCM
 export copy_scm
