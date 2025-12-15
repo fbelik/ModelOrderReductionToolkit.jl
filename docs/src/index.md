@@ -72,7 +72,8 @@ WGReductor
 ```julia
 model = PoissonModel()
 params = [[i,j,k] for i in range(0,1,5) for j in range(0,1,5) for k in range(0,1,5)]
-estimator = StabilityResidualErrorEstimator(model, params, coercive=true)
+scm = SCM(model.Ap, params, coercive=true)
+estimator = StabilityResidualErrorEstimator(model, scm)
 reductor = WGReductor(model, estimator)
 add_to_rb!(reductor, params, 10)
 rom = form_rom(reductor, 10)

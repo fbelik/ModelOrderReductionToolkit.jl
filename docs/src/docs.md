@@ -42,7 +42,7 @@ removeCol!
 
 ### Successive constraint method (SCM):
 ```@docs
-SPD_SCM
+SCM
 ANLSCM
 NNSCM
 copy_scm
