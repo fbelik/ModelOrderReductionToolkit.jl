@@ -28,8 +28,8 @@ using LinearAlgebra
     # WG Reductor
     SCM_EPS = 0.5
     # Test on all kinds of SCM
-    scms = [SPD_SCM(model.Ap, params, SCM_EPS, coercive=true),
-            SPD_SCM(model.Ap, params, SCM_EPS, coercive=false),
+    scms = [SCM(model.Ap, params, SCM_EPS, coercive=true),
+            SCM(model.Ap, params, SCM_EPS, coercive=false),
             ANLSCM(model.Ap, params, SCM_EPS),
             NNSCM(model.Ap, params, SCM_EPS)]
     # Test that each kind of SCM didn't do too much work 
