@@ -94,7 +94,7 @@ step in `approx_errors`, and the truth errors in each step at
 struct WGReductor{NOUT}
     model::StationaryModel{NOUT}
     estimator::ErrorEstimator
-    params_greedy::AbstractVector{Set}
+    params_greedy::Vector{Vector}
     V::VectorOfVectors
     rom::StationaryModel
     approx_errors::Vector{Float64}
@@ -112,15 +112,15 @@ function Base.show(io::Core.IO, reductor::WGReductor)
 end
 
 """
-`wg_reductor = WGReductor(model, estimator[; noise=1])`
+`wg_reductor = WGReductor(model, estimator)`
 
 Given an `ErrorEstimator`, `estimator`, and a `StationaryModel`, `model`, 
 initializes a `WGReductor` object with a null reduced basis.
 """
-function WGReductor(model::StationaryModel{NOUT}, estimator::ErrorEstimator; noise=1) where NOUT
+function WGReductor(model::StationaryModel{NOUT}, estimator::ErrorEstimator) where NOUT
     V = VectorOfVectors(output_length(model), 0, output_type(model))
     rom = galerkin_project(model, V)
-    params_greedy = [Set() for _ in 1:NOUT]
+    params_greedy = [[] for _ in 1:NOUT]
     return WGReductor{NOUT}(model, estimator, params_greedy, V, rom, Float64[], Float64[])
 end
 
@@ -157,9 +157,10 @@ function add_to_rb!(wg_reductor::WGReductor{NOUT}, params::AbstractVector; noise
     max_error = -1.0
     max_i = -1
     max_p = nothing
+    params_greedy = [Set(pg) for pg in wg_reductor.params_greedy]
     for p in (progress ? ProgressBar(params) : params)
         for i in 1:NOUT
-            if p in wg_reductor.params_greedy[i]
+            if p in params_greedy[i]
                 continue
             end
             x_r = wg_reductor.rom(p, i)
@@ -199,7 +200,7 @@ function add_to_rb!(wg_reductor::WGReductor{NOUT}, params::AbstractVector; noise
         return false
     end
     if noise >= 1
-        @printf("(%d) truth error = %.4e, upperbound error = %.4e\n",k,truth_error,max_error)
+        @printf("(%d) maximum surrogate error = %.4e, truth error = %.4e\n",k,max_error,truth_error)
     end
     return true
 end
@@ -212,7 +213,7 @@ Adds to `wg_reductor` at least `r` times by calling
 If all `r` are added, returns `true`, otherwise `false`.
 """
 function add_to_rb!(wg_reductor::WGReductor, params::AbstractVector, r; noise=0, progress=false, eps=0.0, zero_tol=1e-15)
-    for i in 1:r
+    for _ in 1:r
         added = add_to_rb!(wg_reductor, params, noise=noise, progress=progress, eps=eps, zero_tol=zero_tol)
         if !added
             return false
