@@ -165,7 +165,7 @@ function shift_invert_attempt(A::AbstractMatrix, B::Union{AbstractMatrix,Uniform
                 F = InverseMap(factorize_method(A - sigma * B)) * (isa(B, UniformScaling) ? LinearMap(B, size(A,1)) : LinearMap(B))
                 res = partialschur(F, which=:LM, nev=1, restarts=restarts)
                 if res[2].converged
-                    egval = 1 ./ real(res[1].R[1]) .+ sigma
+                    egval = 1 / real(res[1].R[1]) + sigma
                     egvec = view(res[1].Q,:,1)
                     return egval, egvec, true
                 else
