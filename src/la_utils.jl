@@ -200,7 +200,8 @@ function shift_invert_attempt(A::AbstractMatrix, B::Union{AbstractMatrix,Uniform
 end
 
 """
-`reig(A::AbstractMatrix, [B=I; which=:L, kmaxiter=1000, noise=0, krylovsteps=8, eps=1e-14, reldifftol=0.9, absdifftol=0.9, randdisks=1000, ignoreB=false, minstep=10.0, force_sigma=nothing])`
+`reig(A::AbstractMatrix, [B=I; which=:L, kmaxiter=1000, noise=0, egwith=:arpack, restarts=100, 
+krylovsteps=8, eps=1e-14, randdisks=1000, ignoreB=false, minstep=1.0, force_sigma=nothing])`
 
 Given (symmetric) matrices `A` and `B`, computes a real eigenvalue
 
@@ -212,12 +213,16 @@ Given (symmetric) matrices `A` and `B`, computes a real eigenvalue
 
 Returns a tuple (`λ`,`v`) where `λ<:Real` is the eigenvalue and `v` the eigenvector.
 
-Attempts to do this by shift-and-invert using `Arpack.jl` where the shifts are
-determined by the eigenvalue seeked and the Gershgorin disks of `A`. Uses `Arpack.eigs`
-with `maxiter=kmaxiter`. 
+Attempts to do this by shift-and-invert. Uses `Arpack.jl` if `egwith=:arpack` or
+`ArnoldiMethod.jl` if `egwith=:arnoldimethod` where the shifts are
+determined by the eigenvalue seeked and the Gershgorin disks of `B⁻¹A`.
+
+If `egwith=:arpack`, `kmaxiter` determines maximum number of iterations. If 
+`egwith=:arnoldimethod`, uses `restarts` to determine number of restarts.
 
 NOTE: A randomized algorithm is used by default for determining Gershgorin disks. This
 is to speed up the case when `size(A,1) ≫ 1`.
+
 Following paramers relate to selection of shifts:
 
 - `krylovsteps` determines number of logarithmically spaced shifts are attempted
@@ -233,7 +238,7 @@ to ensure no singular shifts. If the relative gap between the shift and the foun
 eigenvalue is greater than `reldifftol` and the absolute gap is greater than `absdifftol`,
 attempts to re-solve by shifting about the found eigenvalue.
 """
-function reig(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; which=:L, kmaxiter=1000, noise=0, egwith=:arnoldimethod, restarts=100,
+function reig(A::AbstractMatrix, B::Union{AbstractMatrix,UniformScaling}=I; which=:L, kmaxiter=1000, noise=0, egwith=:arpack, restarts=100,
               krylovsteps=8, eps=1e-14, randdisks=1000, ignoreB=false, minstep=1.0, force_sigma=nothing)
     if iszero(A)
         return 0.0, ones(size(A,1))
