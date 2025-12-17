@@ -1,8 +1,6 @@
 module ModelOrderReductionToolkit
 using ArnoldiMethod: partialschur
 using Arpack: eigs, svds, XYAUPD_Exception
-using ControlSystems: ss, AbstractStateSpace
-using DescriptorSystems: dss, AbstractDescriptorStateSpace
 using Ipopt
 using JuMP
 using LinearAlgebra
@@ -10,7 +8,6 @@ using LinearMaps
 using MathOptInterface
 using MatrixEquations: plyapc
 using NearestNeighbors
-using OrdinaryDiffEq: ODEProblem
 using Printf
 using ProgressBars: ProgressBar
 using Random: randperm

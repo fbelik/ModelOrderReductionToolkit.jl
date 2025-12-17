@@ -53,14 +53,6 @@ function LTIModel(A_in::Union{AbstractMatrix,APArray},
     return LTIModel(arrs..., aparrs...)
 end
 
-function LTIModel(lti::AbstractStateSpace)
-    return LTIModel(lti.A, lti.B, lti.C, lti.D)
-end
-
-function LTIModel(lti::AbstractDescriptorStateSpace)
-    return LTIModel(lti.A, lti.B, lti.C, lti.D, lti.E)
-end
-
 function Base.show(io::Core.IO, model::LTIModel)
     res  = "LTI Model with state length $(size(model.A, 1)), input length $(size(model.B, 2)), and output length $(size(model.C, 1))"
     println(io, res)
@@ -153,35 +145,6 @@ function bode(model::LTIModel, ωs::AbstractVector{<:Union{AbstractVector,Real}}
     return [bode(model, ω[1], first=first) for ω in ωs]
 end
 
-function f_lti(dx, x, (model,u), t)
-    mul!(dx, model.A, x)
-    mul!(dx, model.B, u(t), 1, 1)
-    ldiv!(model.E, dx)
-end
-
-"""
-`to_ode_problem(model[, p=nothing; u=(t->zeros(size(model.B, 2))), x0=0.0, tspan=(0,1)])`
-
-Creates an `ODEProblem` for the `model <: LTISystem` for a given input `u(t)`.
-Note that this is the ODE for the state variable `x`. Once have formed the solution
-object, will have to multiply by `model.C` to get the output `y`. Note that
-`DifferentialEquations.jl` names the output `u`, which for this problem is the state
-variable `x`, not the input `u`.
-"""
-function to_ode_problem(model::LTIModel, p=nothing; u=(t->zeros(size(model.B, 2))), x0::Union{Number,AbstractVector}=0.0, tspan=(0,1))
-    if !isnothing(p)
-        model(p)
-    end
-    if isa(x0, Number)
-        x0 = x0 .* ones(output_type(model), output_length(model))
-    end
-    ode_p = (model,u)
-    if !isa(model.E, UniformScaling)
-        model.E = factorize(model.E)
-    end 
-    return ODEProblem(f_lti, x0, tspan, ode_p)
-end
-
 """
 `to_ss(model[, p=nothing])`
 
@@ -189,11 +152,8 @@ Initializes the model to the parameter `p` if passed
 in, then returns a `ControlSystems.jl` `StateSpace`
 object. 
 """
-function to_ss(model::LTIModel, p=nothing)
-    if !isnothing(p)
-        model(p)
-    end
-    return ss(model.A, model.B, model.C, model.D)
+function to_ss()
+    error("Must import ControlSystems to include ControlSystemsExt to use this method")
 end
 
 """
@@ -203,11 +163,8 @@ Initializes the model to the parameter `p` if passed
 in, then returns a `DescriptorSystems.jl`
 `DescriptorStateSpace` object. 
 """
-function to_dss(model::LTIModel, p=nothing)
-    if !isnothing(p)
-        model(p)
-    end
-    return dss(Matrix(model.A), isa(model.E, UniformScaling) ? model.E : Matrix(model.E), Matrix(model.B), Matrix(model.C), Matrix(model.D))
+function to_dss()
+    error("Must import DescriptorSystems to include DescriptorSystemsExt to use this method")
 end
 
 """
@@ -308,7 +265,7 @@ function galerkin_project(model::LTIModel, V::AbstractMatrix, W::AbstractMatrix=
         if isnothing(model.Ep)
             if isa(model.E, UniformScaling) && WTEVisI
                 I
-            elseif isa(model.E, UniformScaling) # WᵀEV = EWᵀV = E
+            elseif isa(model.E, UniformScaling) && WTEVisI # WᵀEV = EWᵀV = E
                 model.E
             else
                 VectorOfVectors(W' * model.E * V)
