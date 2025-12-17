@@ -61,11 +61,11 @@ holds true for all `p_i`, and that `∑ γ_i = 0`, and that `∑ γ_i p_i[j] = 0
 for each `j`.
 """
 function min_sigma_rbf(params::Union{Matrix,Vector},
-                       makeA::Function,
+                       Ap::Union{Function,APArray},
                        ϕ::Function=gaussian_rbf;
                        kmaxiter=1000,
-                       noise=1,
-                       progress=true)
+                       noise=0,
+                       progress=false)
 
     if typeof(params) <: Matrix
         P,NP = size(params)
@@ -86,8 +86,8 @@ function min_sigma_rbf(params::Union{Matrix,Vector},
     for i in (progress ? ProgressBar(eachindex(params)) : eachindex(params))
         p = params[i]
         # Compute minimum singular value
-        A = makeA(p)
-        σ_mins[i] = smallest_sval(A, kmaxiter)
+        A = Ap(p)
+        σ_mins[i] = smallest_sval(A, kmaxiter=kmaxiter, noise=noise)
     end
     if noise >= 1
         println("-----")

@@ -51,10 +51,10 @@ struct StandardResidualNormComputer{T} <: ResidualNormComputer{T}
     QA::Int
     Qb::Int
     V::VectorOfVectors{T}
-    X::Matrix
+    X::Union{AbstractMatrix,UniformScaling}
 end
 
-function StandardResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorOfVectors,Nothing}=nothing,X::Union{Nothing,Matrix}=nothing)
+function StandardResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorOfVectors,Nothing}=nothing,X::Union{Nothing,AbstractMatrix,UniformScaling}=nothing)
     if isnothing(V)
         T1 = typeof(prod(zero.(eltype.(Ap.arrays))))
         T2 = typeof(prod(zero.(eltype.(bp.arrays))))
@@ -64,18 +64,12 @@ function StandardResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorOfV
         T = eltype(V)
     end
     Ais = Ap.arrays
-    makeθAi = Ap.makeθi
     bis = bp.arrays
-    makeθbi = bp.makeθi
 
-    n = length(bis[1])
     QA = length(Ais)
     Qb = length(bis)
     # Form X if nothing
-    X0 = Matrix{T}(I, (n,n))
-    if !isnothing(X)
-        X0 .= X
-    end
+    X0 = isnothing(X) ? I : X
     # Form c_ij = b_i^T X b_j
     cijs = T[]
     for i in 1:Qb
@@ -216,10 +210,10 @@ struct ProjectionResidualNormComputer{T} <: ResidualNormComputer{T}
     QA::Int
     Qb::Int
     V::VectorOfVectors{T}
-    X::Matrix
+    X::Union{AbstractMatrix,UniformScaling}
 end
 
-function ProjectionResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorOfVectors,Nothing}=nothing,X::Union{Nothing,Matrix}=nothing)
+function ProjectionResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorOfVectors,Nothing}=nothing,X::Union{Nothing,AbstractMatrix,UniformScaling}=nothing)
     if isnothing(V)
         T1 = typeof(prod(zero.(eltype.(Ap.arrays))))
         T2 = typeof(prod(zero.(eltype.(bp.arrays))))
@@ -232,14 +226,10 @@ function ProjectionResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorO
     Ais = Ap.arrays
     bis = bp.arrays
 
-    n = length(bis[1])
     QA = length(Ais)
     Qb = length(bis)
     # Form X if nothing
-    X0 = Matrix{T}(I, (n,n))
-    if !isnothing(X)
-        X0 .= X
-    end
+    X0 = isnothing(X) ? I : X
     # Form Updateable QR Factorization for AV
     F = UpdatableQR(zeros(T, (size(Ais[1],1),0)))
     # Store vectors of Q
@@ -351,7 +341,7 @@ function compute(res_init::ProjectionResidualNormComputer, u_r::AbstractVector, 
     res = 0.0
     for i in 1:res_init.QA
         for j in eachindex(eachcol(res_init.V))
-            if res_init.ij_idxs[i][min(j, length(res_init.ij_idxs[i]))] != -1 #push!(res_init.ij_idxs[i], -1)
+            if res_init.ij_idxs[i][min(j, length(res_init.ij_idxs[i]))] != -1
                 cur = 0.0
                 for k in 1:res_init.Qb
                     cur += θbis[k] * res_init.b_par_ijks[i][j][k]

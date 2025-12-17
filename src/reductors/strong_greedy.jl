@@ -40,12 +40,12 @@ function SGReductor(model::StationaryModel)
 end
 
 """
-`add_to_rb!(sg_reductor, snapshots[; noise=1])`
+`add_to_rb!(sg_reductor, snapshots[; noise=0])`
 
 Directly updates `sg_reductor` with new snapshots given in
 the columns of the matrix `snapshots`.
 """
-function add_to_rb!(sg_reductor::SGReductor, snapshots::AbstractMatrix; noise=1)
+function add_to_rb!(sg_reductor::SGReductor, snapshots::AbstractMatrix; noise=0)
     @assert size(snapshots, 1) == size(sg_reductor.snapshots, 1)
     for x in eachcol(snapshots)
         addCol!(sg_reductor.snapshots)
@@ -66,13 +66,13 @@ end
 
 
 """
-`add_to_rb!(sg_reductor, parameters[; noise=1, progress=true])`
+`add_to_rb!(sg_reductor, parameters[; noise=0, progress=false])`
 
 Loops through the vector of `parameters`, forms their full order solutions,
 adds them to `sg_reductor.snapshots`, and then updates the reduced basis
 in `sg_reductor.V`.
 """
-function add_to_rb!(sg_reductor::SGReductor{NOUT}, parameters::AbstractVector; noise=1, progress=true) where NOUT
+function add_to_rb!(sg_reductor::SGReductor{NOUT}, parameters::AbstractVector; noise=0, progress=false) where NOUT
     if noise >= 1
         println("Adding to RB by forming full order solutions")
     end
@@ -114,14 +114,12 @@ end
 """
 `lift(sg_reductor, x_r)`
 
-Given a vector solution `x_r` to a ROM formed by the
-`sg_reductor`, which is of smaller dimension than outputs
-of the FOM, lifts the solution to the same dimension of
+Given a solution array `x_r` to a ROM formed by the
+`sg_reductor` lifts the solution(s) to the same dimension of
 the FOM. 
 """
-function lift(reductor::SGReductor, x_r::AbstractVector)
-    r = length(x_r)
-    V = reductor.V
-    N, M = size(V)
-    return view(Matrix(V), 1:N, 1:r) * x_r
+function lift(sg_reductor::SGReductor, x_r::AbstractArray)
+    r = size(x_r,1)
+    V = sg_reductor.V
+    return V[:, 1:r] * x_r
 end

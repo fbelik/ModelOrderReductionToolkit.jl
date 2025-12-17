@@ -218,7 +218,9 @@ where ``\sigma_{min}(A(p))`` is the minimum singular value of ``A(p)``. Note tha
 
 We now need a method to approximate (a lowerbound of ) ``\sigma_{min}(A(p))``, and then the numerator of the above can be computed explicitly. One way of doing this is through the **successive constraint method** (SCM). This method takes advantage of the affine parameter dependence of ``A(p)``, see source 1. We will form an SCM object and initialize an object to compute the norm of the residual through a `StabilityResidualErrorEstimator`.
 ```@example 1
-error_estimator = StabilityResidualErrorEstimator(model, params);
+scm = SCM(model.Ap, params, coercive=true)
+error_estimator = StabilityResidualErrorEstimator(model, scm)
+nothing # hide
 ```
 Note that this method assumes that the model is coercive, i.e., the matrix `A(p)` is symmetric positive definite for each parameter. For this model, we know that this is the case if the parameter vectors have entries between 0 and 1. For a noncoercive model, add the keyword argument `coercive=false`. With this in place, we have enough to construct the weak greedy reductor.
 ```@example 1

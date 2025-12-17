@@ -45,7 +45,7 @@ end
 Directly updates `pod_reductor` with new snapshots given in
 the columns of the matrix `snapshots`.
 """
-function add_to_rb!(pod_reductor::PODReductor, snapshots::AbstractMatrix; noise=1)
+function add_to_rb!(pod_reductor::PODReductor, snapshots::AbstractMatrix; noise=0)
     @assert size(snapshots, 1) == size(pod_reductor.snapshots, 1)
     for x in eachcol(snapshots)
         addCol!(pod_reductor.snapshots)
@@ -65,13 +65,13 @@ function add_to_rb!(pod_reductor::PODReductor, snapshots::AbstractMatrix; noise=
 end
 
 """
-`add_to_rb!(pod_reductor, parameters[; noise=1, progress=true])`
+`add_to_rb!(pod_reductor, parameters[; noise=0, progress=false])`
 
 Loops through the vector of `parameters`, forms their full order solutions,
 adds them to `pod_reductor.snapshots`, and then updates the singular values 
 and singular vectors in `pod_reductor.S` and `pod_reductor.V`.
 """
-function add_to_rb!(pod_reductor::PODReductor{NOUT}, parameters::AbstractVector; noise=1, progress=true) where NOUT
+function add_to_rb!(pod_reductor::PODReductor{NOUT}, parameters::AbstractVector; noise=0, progress=false) where NOUT
     if noise >= 1
         println("Adding to RB by forming full order solutions")
     end
@@ -114,14 +114,12 @@ end
 """
 `lift(pod_reductor, x_r)`
 
-Given a vector solution `x_r` to a ROM formed by the
-`pod_reductor`, which is of smaller dimension than outputs
-of the FOM, lifts the solution to the same dimension of
-the FOM. 
+Given a solution array `x_r` to a ROM formed by the
+`pod_reductor` lifts the solution(s) to the same dimension of
+the FOM.  
 """
-function lift(pod_reductor::PODReductor, x_r::AbstractVector)
-    r = length(x_r)
+function lift(pod_reductor::PODReductor, x_r::AbstractArray)
+    r = size(x_r,1)
     V = pod_reductor.V
-    N, M = size(V)
-    return view(Matrix(V), 1:N, 1:r) * x_r
+    return V[:, 1:r] * x_r
 end

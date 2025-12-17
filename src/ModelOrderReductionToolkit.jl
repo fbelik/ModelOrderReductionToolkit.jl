@@ -1,9 +1,13 @@
 module ModelOrderReductionToolkit
-using Arpack
+using ArnoldiMethod: partialschur
+using Arpack: eigs, svds, XYAUPD_Exception
 using ControlSystems: ss, AbstractStateSpace
 using DescriptorSystems: dss, AbstractDescriptorStateSpace
+using Ipopt
 using JuMP
 using LinearAlgebra
+using LinearMaps
+using MathOptInterface
 using MatrixEquations: plyapc
 using NearestNeighbors
 using OrdinaryDiffEq: ODEProblem
@@ -12,12 +16,12 @@ using ProgressBars: ProgressBar
 using Random: randperm
 using SparseArrays
 using StaticArrays
-using Tulip
+using HiGHS
 using UpdatableQRFactorizations
 include("la_utils.jl")
 include("ap_arrays.jl")
 include("vector_of_vectors.jl")
-include("successive_constraint.jl")
+include("scm.jl")
 include("stability_radial_basis.jl")
 include("residual_norm.jl")
 include("lradi.jl")
@@ -44,10 +48,12 @@ export addRow!
 export removeRow!
 export addCol!
 export removeCol!
-# successive_constraint_spd.jl exports
-export initialize_SCM_SPD
-export initialize_SCM_Noncoercive
-export find_sigma_bounds
+# scm.jl exports
+export SCM
+export ANLSCM
+export NNSCM
+export copy_scm
+export constrain!
 # stability_radial_basis.jl exports
 export Sigma_Min_RBF
 export min_sigma_rbf

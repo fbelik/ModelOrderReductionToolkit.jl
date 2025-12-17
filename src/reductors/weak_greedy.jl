@@ -22,27 +22,8 @@ stability factor with `stability_estimator(p)` and computes
 the residual norm with `residual_norm`.
 """
 struct StabilityResidualErrorEstimator <: ErrorEstimator
-    stability_estimator::Union{Function,SCM_Init}
+    stability_estimator::Function
     residual_norms::Vector{ResidualNormComputer}
-    function StabilityResidualErrorEstimator(model::LinearModel, param_disc; residual=:proj, coercive=true, Ma=15, Mp=15, eps_SCM=1e-2, kmaxiter=1000, noise=1)
-        stability_estimator = begin
-            if coercive
-                initialize_SCM_SPD(param_disc, model.Ap, Ma, Mp, eps_SCM, kmaxiter=kmaxiter, noise=noise)
-            else
-                initialize_SCM_Noncoercive(param_disc, model.Ap, Ma, Mp, eps_SCM, kmaxiter=kmaxiter, noise=noise)
-            end
-        end
-        residual_norm = begin
-            if residual == :standard
-                StandardResidualNormComputer(model.Ap, model.bp)
-            elseif residual == :proj
-                ProjectionResidualNormComputer(model.Ap, model.bp)
-            else
-                error("Unknown residual keyword: $residual")
-            end
-        end
-        return new(stability_estimator, [residual_norm])
-    end
     function StabilityResidualErrorEstimator(model::LinearModel, custom_stability_estimator::Function; residual=:proj)
         residual_norm = begin
             if residual == :standard
@@ -50,29 +31,10 @@ struct StabilityResidualErrorEstimator <: ErrorEstimator
             elseif residual == :proj
                 ProjectionResidualNormComputer(model.Ap, model.bp)
             else
-                error("Unknown residual keyword: $residual")
+                error("Unknown residual keyword: $residual; choose from (:standard, :proj)")
             end
         end
         return new(custom_stability_estimator, [residual_norm])
-    end
-    function StabilityResidualErrorEstimator(model::LinearMatrixModel, param_disc; residual=:proj, coercive=true, Ma=15, Mp=15, eps_SCM=1e-2, kmaxiter=1000, noise=1)
-        stability_estimator = begin
-            if coercive
-                initialize_SCM_SPD(param_disc, model.Ap, Ma, Mp, eps_SCM, kmaxiter=kmaxiter, noise=noise)
-            else
-                initialize_SCM_Noncoercive(param_disc, model.Ap, Ma, Mp, eps_SCM, kmaxiter=kmaxiter, noise=noise)
-            end
-        end
-        residual_norms = [begin
-            if residual == :standard
-                StandardResidualNormComputer(model.Ap, bp)
-            elseif residual == :proj
-                ProjectionResidualNormComputer(model.Ap, bp)
-            else
-                error("Unknown residual keyword: $residual")
-            end
-        end for bp in model.bps]
-        return new(stability_estimator, residual_norms)
     end
     function StabilityResidualErrorEstimator(model::LinearMatrixModel, custom_stability_estimator::Function; residual=:proj)
         residual_norms = [begin
@@ -81,7 +43,7 @@ struct StabilityResidualErrorEstimator <: ErrorEstimator
             elseif residual == :proj
                 ProjectionResidualNormComputer(model.Ap, bp)
             else
-                error("Unknown residual keyword: $residual")
+                error("Unknown residual keyword: $residual; choose from (:standard, :proj)")
             end
         end for bp in model.bps]
         return new(custom_stability_estimator, residual_norms)
@@ -132,7 +94,7 @@ step in `approx_errors`, and the truth errors in each step at
 struct WGReductor{NOUT}
     model::StationaryModel{NOUT}
     estimator::ErrorEstimator
-    params_greedy::AbstractVector{Set}
+    params_greedy::Vector{Vector}
     V::VectorOfVectors
     rom::StationaryModel
     approx_errors::Vector{Float64}
@@ -150,15 +112,15 @@ function Base.show(io::Core.IO, reductor::WGReductor)
 end
 
 """
-`wg_reductor = WGReductor(model, estimator[; noise=1])`
+`wg_reductor = WGReductor(model, estimator)`
 
 Given an `ErrorEstimator`, `estimator`, and a `StationaryModel`, `model`, 
 initializes a `WGReductor` object with a null reduced basis.
 """
-function WGReductor(model::StationaryModel{NOUT}, estimator::ErrorEstimator; noise=1) where NOUT
+function WGReductor(model::StationaryModel{NOUT}, estimator::ErrorEstimator) where NOUT
     V = VectorOfVectors(output_length(model), 0, output_type(model))
     rom = galerkin_project(model, V)
-    params_greedy = [Set() for _ in 1:NOUT]
+    params_greedy = [[] for _ in 1:NOUT]
     return WGReductor{NOUT}(model, estimator, params_greedy, V, rom, Float64[], Float64[])
 end
 
@@ -177,14 +139,14 @@ function add_directly_to_rb!(wg_reductor::WGReductor, x::AbstractVector)
 end
 
 """
-`add_to_rb!(wg_reductor, params[; noise=1, eps=0.0, zero_tol=1e-15])`
+`add_to_rb!(wg_reductor, params[; noise=0, progress=false, eps=0.0, zero_tol=1e-15])`
 
 Loops through the vector of parameters `params`, computes the approximate estimator
 for each, selects the one with the highest error, and updates `wg_reductor` with 
 the corresponding full order solution. Returns `true` if a vector is added to the RB,
 `false` otherwise.
 """
-function add_to_rb!(wg_reductor::WGReductor{NOUT}, params::AbstractVector; noise=1, progress=false, eps=0.0, zero_tol=1e-15) where NOUT
+function add_to_rb!(wg_reductor::WGReductor{NOUT}, params::AbstractVector; noise=0, progress=false, eps=0.0, zero_tol=1e-15) where NOUT
     k = size(wg_reductor.V, 2) + 1
     if k > output_length(wg_reductor.model)
         if noise >= 1
@@ -195,9 +157,10 @@ function add_to_rb!(wg_reductor::WGReductor{NOUT}, params::AbstractVector; noise
     max_error = -1.0
     max_i = -1
     max_p = nothing
+    params_greedy = [Set(pg) for pg in wg_reductor.params_greedy]
     for p in (progress ? ProgressBar(params) : params)
         for i in 1:NOUT
-            if p in wg_reductor.params_greedy[i]
+            if p in params_greedy[i]
                 continue
             end
             x_r = wg_reductor.rom(p, i)
@@ -234,22 +197,23 @@ function add_to_rb!(wg_reductor::WGReductor{NOUT}, params::AbstractVector; noise
         add_directly_to_rb!(wg_reductor, x)
     elseif noise >= 1
         @printf("After orthogonalizing, truth vector had norm %.2e < zero_tol, not appending to RB\n", nx)
+        return false
     end
     if noise >= 1
-        @printf("(%d) truth error = %.4e, upperbound error = %.4e\n",k,truth_error,max_error)
+        @printf("(%d) maximum surrogate error = %.4e, truth error = %.4e\n",k,max_error,truth_error)
     end
     return true
 end
 
 """
-`add_to_rb!(wg_reductor, params, r[; noise=1, eps=0.0, zero_tol=1e-15])`
+`add_to_rb!(wg_reductor, params, r[; noise=0, eps=0.0, zero_tol=1e-15])`
 
 Adds to `wg_reductor` at least `r` times by calling 
 `add_to_rb!(wg_reductor, params, noise=noise, eps=eps, zero_tol=zero_tol)` several times.
 If all `r` are added, returns `true`, otherwise `false`.
 """
-function add_to_rb!(wg_reductor::WGReductor, params::AbstractVector, r; noise=1, progress=false, eps=0.0, zero_tol=1e-15)
-    for i in 1:r
+function add_to_rb!(wg_reductor::WGReductor, params::AbstractVector, r; noise=0, progress=false, eps=0.0, zero_tol=1e-15)
+    for _ in 1:r
         added = add_to_rb!(wg_reductor, params, noise=noise, progress=progress, eps=eps, zero_tol=zero_tol)
         if !added
             return false
@@ -292,14 +256,12 @@ end
 """
 `lift(wg_reductor, x_r)`
 
-Given a vector solution `x_r` to a ROM formed by the
-`wg_reductor`, which is of smaller dimension than outputs
-of the FOM, lifts the solution to the same dimension of
+Given a solution array `x_r` to a ROM formed by the
+`wg_reductor` lifts the solution(s) to the same dimension of
 the FOM. 
 """
-function lift(wg_reductor::WGReductor, x_r::AbstractVector)
-    r = length(x_r)
+function lift(wg_reductor::WGReductor, x_r::AbstractArray)
+    r = size(x_r,1)
     V = wg_reductor.V
-    N, M = size(V)
-    return view(Matrix(V), 1:N, 1:r) * x_r
+    return V[:, 1:r] * x_r
 end
