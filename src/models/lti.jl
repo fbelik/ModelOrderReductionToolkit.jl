@@ -148,24 +148,26 @@ end
 """
 `to_ss(model[, p=nothing])`
 
+Must import `ControlSystems.jl` for this functionality as
+its definition lives in an extension.
+
 Initializes the model to the parameter `p` if passed
 in, then returns a `ControlSystems.jl` `StateSpace`
 object. 
 """
-function to_ss()
-    error("Must import ControlSystems to include ControlSystemsExt to use this method")
-end
+function to_ss end
 
 """
 `to_dss(model[, p=nothing])`
+
+Must import `DescriptorSystems.jl` for this functionality as
+its definition lives in an extension.
 
 Initializes the model to the parameter `p` if passed
 in, then returns a `DescriptorSystems.jl`
 `DescriptorStateSpace` object. 
 """
-function to_dss()
-    error("Must import DescriptorSystems to include DescriptorSystemsExt to use this method")
-end
+function to_dss end
 
 """
 `frequency_model = to_frequency_domain(model, logfreq=false)`

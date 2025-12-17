@@ -36,6 +36,13 @@ function (m::NonstationaryModel)(p)
     error("Must implement solution model(p) for NonstationaryModel")
 end
 
+"""
+`to_ode_problem(model::NonstationaryModel[, p=nothing; u=(t->0), x0=0.0, tspan=(0,1)])`
+
+Creates an `ODEProblem` for the `model <: NonstationaryModel` for a given input `u(t)`.
+To use this method requires importing `OrdinaryDiffEq` as this functionality lives 
+in an extension. 
+"""
 function to_ode_problem(m::NonstationaryModel, p=nothing; u=(t->0), x0=0.0, tspan=(0,1))
     error("Must implement to_ode_problem for NonstationaryModel; must import OrdinaryDiffEq to use this method")
 end
