@@ -7,12 +7,12 @@ galerkin_add!
 PoissonModel
 PenzlModel
 MISOPenzlModel
+ParameterizedPenzlModel
 to_frequency_domain
 to_ss
 to_dss
 to_ode_problem
 bode
-ParameterizedPenzlModel
 ```
 
 ### Reductors
