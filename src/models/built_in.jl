@@ -78,7 +78,7 @@ function PoissonModel(; Nx=999, P=3)
 end
 
 """
-`model = PenzlModel()`
+`model = PenzlModel([ns=1006])`
 
 Generates the standard Penzl `LTIModel` with
 one input, one output, and `ns=1006` dimension state variable.
@@ -107,7 +107,7 @@ function PenzlModel(ns::Int=1006)
 end
 
 """
-`model = MISOPenzlModel()`
+`model = MISOPenzlModel([ns=1006])`
 
 Generates an `LTIModel` with three inputs, one output, 
 and a state of dimension `ns=1006`. Same structure as the 
@@ -162,7 +162,7 @@ function MISOPenzlModel(ns::Int=1006)
 end
 
 """
-`model = ParameterizedPenzlModel()`
+`model = ParameterizedPenzlModel([ns=1006])`
 
 Generates an `LTIModel` with one input, one output, 
 and a state of dimension `ns=1006`. Same structure as the 
