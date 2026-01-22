@@ -146,6 +146,40 @@ function bode(model::LTIModel, ωs::AbstractVector{<:Union{AbstractVector,Real}}
 end
 
 """
+`poles(model::LTIModel[, p=nothing])`
+
+Returns the poles (eigenvalues `Ax=λEx`) of the LTI system `model`
+at the parameter `p`.
+"""
+function poles(model::LTIModel, p=nothing)
+    if !isnothing(p)
+        model(p)
+    end
+    if isa(model.E, UniformScaling)
+        return eigen(model.E \ model.A).values
+    else
+        return eigen(model.A, model.E).values
+    end
+end
+
+"""
+`poles_and_vectors(model::LTIModel[, p=nothing])`
+
+Returns the eigenvalues and eigenvectors `Ax=λEx` of the LTI system 
+`model` at the parameter `p`.
+"""
+function poles_and_vectors(model::LTIModel, p=nothing)
+    if !isnothing(p)
+        model(p)
+    end
+    if isa(model.E, UniformScaling)
+        return eigen(model.E \ model.A)
+    else
+        return eigen(model.A, model.E)
+    end
+end
+
+"""
 `to_ss(model[, p=nothing])`
 
 Must import `ControlSystems.jl` for this functionality as
@@ -218,8 +252,9 @@ end
 `galerkin_project(model, V[, W=V; WTEVisI=false, r=-1])`
 
 Performs Galerkin projection on the `model <: LTIModel` and
-returns a new `LTIModel`. By default, assumes that `WᵀV=I`,
-if `WTEVisI==true`, then assumes that `WᵀEV=I`.
+returns a new `LTIModel`. If `W` and `V` are semiunitary, 
+aka `W'V=I`
+`WTEVisI==true`, then assumes that .
 """
 function galerkin_project(model::LTIModel, V::AbstractMatrix, W::AbstractMatrix=V; WTEVisI=false, r=-1)
     N, n = size(V)
@@ -265,10 +300,8 @@ function galerkin_project(model::LTIModel, V::AbstractMatrix, W::AbstractMatrix=
     
     E_in = begin
         if isnothing(model.Ep)
-            if isa(model.E, UniformScaling) && WTEVisI
+            if WTEVisI
                 I
-            elseif isa(model.E, UniformScaling) && WTEVisI # WᵀEV = EWᵀV = E
-                model.E
             else
                 VectorOfVectors(W' * model.E * V)
             end

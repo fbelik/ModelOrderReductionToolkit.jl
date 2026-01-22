@@ -78,9 +78,20 @@ end
     omegas = range(-500,500,1001)
     bodeerr = abs.(bode(model, omegas, first=true) .- bode(rom, omegas, first=true))
     @test maximum(bodeerr) < ERR_TOL
+    # IRKA
+    irka_reductor = IRKAReductor(model, r, p0)
+    rom = form_rom(irka_reductor, r)
+    omegas = range(-500,500,1001)
+    bodeerr = abs.(bode(model, omegas, first=true) .- bode(rom, omegas, first=true))
+    @test maximum(bodeerr) < ERR_TOL
+    # SISO IRKA
+    irka_reductor = SISOIRKAReductor(model, r, p0)
+    rom = form_rom(irka_reductor, r)
+    omegas = range(-500,500,1001)
+    bodeerr = abs.(bode(model, omegas, first=true) .- bode(rom, omegas, first=true))
+    @test maximum(bodeerr) < ERR_TOL
     # RB Method
     freq_model = to_frequency_domain(model)
-    ωs = range(-2,3)
     params = [[ω,i,j,k] for ω in 10.0 .^ range(-2,3,50) for i in range(-40,40,5) for j in range(-40,40,5) for k in range(-40,40,5)]
     rb_reductor = PODReductor(freq_model)
     add_to_rb!(rb_reductor, params)
