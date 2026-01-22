@@ -112,13 +112,14 @@ function Base.show(io::Core.IO, reductor::WGReductor)
 end
 
 """
-`wg_reductor = WGReductor(model, estimator)`
+`wg_reductor = WGReductor(model, estimator[; force_rb_real=false])`
 
 Given an `ErrorEstimator`, `estimator`, and a `StationaryModel`, `model`, 
-initializes a `WGReductor` object with a null reduced basis.
+initializes a `WGReductor` object with a null reduced basis. Forces
+the RB to be real if `force_rb_real==true`.
 """
-function WGReductor(model::StationaryModel{NOUT}, estimator::ErrorEstimator) where NOUT
-    V = VectorOfVectors(output_length(model), 0, output_type(model))
+function WGReductor(model::StationaryModel{NOUT}, estimator::ErrorEstimator; force_rb_real=false) where NOUT
+    V = VectorOfVectors(output_length(model), 0, force_rb_real ? real(output_type(model)) : output_type(model))
     rom = galerkin_project(model, V)
     params_greedy = [[] for _ in 1:NOUT]
     return WGReductor{NOUT}(model, estimator, params_greedy, V, rom, Float64[], Float64[])
@@ -191,13 +192,34 @@ function add_to_rb!(wg_reductor::WGReductor{NOUT}, params::AbstractVector; noise
     x_approx = lift(wg_reductor, wg_reductor.rom(max_p, max_i))
     truth_error = norm(x .- x_approx)
     push!(wg_reductor.truth_errors, truth_error)
-    # Orthonormalize solution w.r.t. V
-    nx = orthonormalize_mgs2!(x, wg_reductor.V)
-    if nx >= zero_tol
-        add_directly_to_rb!(wg_reductor, x)
-    elseif noise >= 1
-        @printf("After orthogonalizing, truth vector had norm %.2e < zero_tol, not appending to RB\n", nx)
-        return false
+    if eltype(x) <: Complex && eltype(wg_reductor.V) <: Real
+        # Add real and imaginary parts to V
+        x1 = real.(x)
+        nx1 = orthonormalize_mgs2!(x1, wg_reductor.V)
+        if nx1 >= zero_tol
+            add_directly_to_rb!(wg_reductor, x1)
+        elseif noise >= 1
+            @printf("After orthogonalizing, real part of truth vector had norm %.2e < zero_tol, not appending to RB\n", nx1)
+        end
+        x2 = imag.(x)
+        nx2 = orthonormalize_mgs2!(x2, wg_reductor.V)
+        if nx2 >= zero_tol
+            add_directly_to_rb!(wg_reductor, x2)
+        elseif noise >= 1
+            @printf("After orthogonalizing, imaginary part of truth vector had norm %.2e < zero_tol, not appending to RB\n", nx2)
+        end
+        if nx1 < zero_tol && nx2 < zero_tol
+            return false
+        end
+    else
+        # Add x to V
+        nx = orthonormalize_mgs2!(x, wg_reductor.V)
+        if nx >= zero_tol
+            add_directly_to_rb!(wg_reductor, x)
+        elseif noise >= 1
+            @printf("After orthogonalizing, truth vector had norm %.2e < zero_tol, not appending to RB\n", nx)
+            return false
+        end
     end
     if noise >= 1
         @printf("(%d) maximum surrogate error = %.4e, truth error = %.4e\n",k,max_error,truth_error)
@@ -233,13 +255,11 @@ function form_rom(wg_reductor::WGReductor, r=-1)
     V = wg_reductor.V
     if r == -1 || r == size(V, 2)
         return get_rom(wg_reductor)
-    elseif r > size(V, 2)
-        add_to_rb!(wg_reductor, params)
-    end
-    if (size(V, 2) < r)
+    elseif r < size(V, 2)
+        return galerkin_project(wg_reductor.model, wg_reductor.V[:,1:r])
+    else
         error("r=$r must be ≤ $(size(V, 2)), first call add_to_rb! to increase reductor's RB dimension.")
     end
-    return galerkin_project(wg_reductor.model, Matrix(V), r=r)
 end
 
 """

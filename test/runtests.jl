@@ -4,8 +4,8 @@ using SparseArrays
 using LinearAlgebra
 
 @testset "LinearModel" begin
-    model = PoissonModel()
-    r = 25; ERR_TOL = 1e-2
+    model = PoissonModel(Nx=100)
+    r = 20; ERR_TOL = 1e-2
     params = [[i,j,k] for i in range(0,1,5) for j in range(0,1,5) for k in range(0,1,5)]
     # POD Reductor
     pod_reductor = PODReductor(model)
@@ -69,19 +69,18 @@ using LinearAlgebra
 end
 
 @testset "LTIModel" begin
-    model = ParameterizedPenzlModel()
-    r = 25; ERR_TOL = 1e-2
+    model = ParameterizedPenzlModel(100)
+    r = 20; ERR_TOL = 1e-2
     p0 = zeros(3)
     # Balanced truncation
     bt_reductor = BTReductor(model, p0)
     rom = form_rom(bt_reductor, r)
-    omegas = range(-500,500,1001)
+    omegas = logrange(1e-2,1e3,100)
     bodeerr = abs.(bode(model, omegas, first=true) .- bode(rom, omegas, first=true))
     @test maximum(bodeerr) < ERR_TOL
     # IRKA
     irka_reductor = IRKAReductor(model, r, p0)
-    rom = form_rom(irka_reductor, r)
-    omegas = range(-500,500,1001)
+    rom = form_rom(irka_reductor)
     bodeerr = abs.(bode(model, omegas, first=true) .- bode(rom, omegas, first=true))
     @test maximum(bodeerr) < ERR_TOL
     # SISO IRKA
@@ -90,12 +89,29 @@ end
     omegas = range(-500,500,1001)
     bodeerr = abs.(bode(model, omegas, first=true) .- bode(rom, omegas, first=true))
     @test maximum(bodeerr) < ERR_TOL
-    # RB Method
+    # POD RB Method
     freq_model = to_frequency_domain(model)
     params = [[ω,i,j,k] for ω in 10.0 .^ range(-2,3,50) for i in range(-40,40,5) for j in range(-40,40,5) for k in range(-40,40,5)]
-    rb_reductor = PODReductor(freq_model)
-    add_to_rb!(rb_reductor, params)
-    rom = galerkin_project(model, Matrix(rb_reductor.V[:,1:r]))
+    pod_reductor = PODReductor(freq_model, force_rb_real=true)
+    add_to_rb!(pod_reductor, params)
+    rom = galerkin_project(model, Matrix(pod_reductor.V[:,1:r]))
+    for p in [[0,0,0],[0,0,50],[40,-40,0],[10,15,-15]]
+        bodeerr = abs.(bode(model, omegas, p, first=true) .- bode(rom, omegas, p, first=true))
+        @test maximum(bodeerr) < ERR_TOL
+    end
+    # SG RB Method
+    sg_reductor = SGReductor(freq_model, force_rb_real=true)
+    add_to_rb!(sg_reductor, pod_reductor.snapshots)
+    rom = galerkin_project(model, Matrix(sg_reductor.V[:,1:r]))
+    for p in [[0,0,0],[0,0,50],[40,-40,0],[10,15,-15]]
+        bodeerr = abs.(bode(model, omegas, p, first=true) .- bode(rom, omegas, p, first=true))
+        @test maximum(bodeerr) < ERR_TOL
+    end
+    # WG RB Method
+    estimator = StabilityResidualErrorEstimator(freq_model, p -> 1.0)
+    wg_reductor = WGReductor(freq_model, estimator, force_rb_real=true)
+    add_to_rb!(wg_reductor, params, div(r,2))
+    rom = galerkin_project(model, Matrix(sg_reductor.V[:,1:r]))
     omegas = 10.0 .^ range(-2,3,1000)
     for p in [[0,0,0],[0,0,50],[40,-40,0],[10,15,-15]]
         bodeerr = abs.(bode(model, omegas, p, first=true) .- bode(rom, omegas, p, first=true))

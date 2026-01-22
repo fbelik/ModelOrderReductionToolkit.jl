@@ -284,7 +284,7 @@ function ProjectionResidualNormComputer(Ap::APArray,bp::APArray,V::Union{VectorO
                                         Ap, bp, QA, Qb, V, X0)
 end
 
-function update!(res_init::ProjectionResidualNormComputer{T}, v::AbstractVector{T}) where T
+function update!(res_init::ProjectionResidualNormComputer{T}, v::AbstractVector) where T
     Ais = res_init.Ap.arrays
     bis = res_init.bp.arrays
 

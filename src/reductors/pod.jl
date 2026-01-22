@@ -17,17 +17,18 @@ struct PODReductor{NOUT}
 end
 
 """
-`pod_reductor = PODReductor(model)`
+`pod_reductor = PODReductor(model[; force_rb_real=false])`
 
-Forms a `PODReductor` object for `model <: StationaryModel`.
+Forms a `PODReductor` object for `model <: StationaryModel`. Forces
+the RB to be real if `force_rb_real==true`.
 """
-function PODReductor(model::StationaryModel{NOUT}) where NOUT
+function PODReductor(model::StationaryModel{NOUT}; force_rb_real=false) where NOUT
     T = output_type(model)
     N = output_length(model)
     snapshots = VectorOfVectors(N, 0, T)
     parameters = Set()
     S = Float64[]
-    V = VectorOfVectors(N, 0, T)
+    V = VectorOfVectors(N, 0, force_rb_real ? real(T) : T)
     return PODReductor{NOUT}(model, snapshots, parameters, S, V)
 end
 
@@ -47,20 +48,32 @@ the columns of the matrix `snapshots`.
 """
 function add_to_rb!(pod_reductor::PODReductor, snapshots::AbstractMatrix; noise=0)
     @assert size(snapshots, 1) == size(pod_reductor.snapshots, 1)
+    forced_real = eltype(pod_reductor.snapshots) <: Complex && eltype(pod_reductor.V) <: Real
     for x in eachcol(snapshots)
         addCol!(pod_reductor.snapshots)
         if size(pod_reductor.V, 2) < output_length(pod_reductor.model)
             addCol!(pod_reductor.V)
             push!(pod_reductor.S, 0.0)
+            if size(pod_reductor.V, 2) < output_length(pod_reductor.model) && forced_real
+                addCol!(pod_reductor.V)
+                push!(pod_reductor.S, 0.0)
+            end
         end
         pod_reductor.snapshots[:,end] .= x
     end
     if noise >= 1
         println("Forming SVD of snapshot matrix")
     end
-    U, S, _ = svd(pod_reductor.snapshots)
-    pod_reductor.S .= S
-    pod_reductor.V .= U
+    if forced_real
+        real_snapshots = hcat(real.(pod_reductor.snapshots), imag.(pod_reductor.snapshots))
+        U, S, _ = svd(real_snapshots)
+        pod_reductor.S .= S
+        pod_reductor.V .= U
+    else
+        U, S, _ = svd(pod_reductor.snapshots)
+        pod_reductor.S .= S
+        pod_reductor.V .= U
+    end
     nothing
 end
 
@@ -75,7 +88,8 @@ function add_to_rb!(pod_reductor::PODReductor{NOUT}, parameters::AbstractVector;
     if noise >= 1
         println("Adding to RB by forming full order solutions")
     end
-    for (i,p) in (progress ? ProgressBar(enumerate(parameters)) : enumerate(parameters))
+    forced_real = eltype(pod_reductor.snapshots) <: Complex && eltype(pod_reductor.V) <: Real
+    for p in (progress ? ProgressBar(parameters) : parameters)
         if p in pod_reductor.parameters
             continue
         end
@@ -84,6 +98,10 @@ function add_to_rb!(pod_reductor::PODReductor{NOUT}, parameters::AbstractVector;
             if size(pod_reductor.V, 2) < output_length(pod_reductor.model)
                 addCol!(pod_reductor.V)
                 push!(pod_reductor.S, 0.0)
+                if size(pod_reductor.V, 2) < output_length(pod_reductor.model) && forced_real
+                    addCol!(pod_reductor.V)
+                    push!(pod_reductor.S, 0.0)
+                end
             end
             pod_reductor.snapshots[:,end] .= pod_reductor.model(p, j)
         end
@@ -92,9 +110,15 @@ function add_to_rb!(pod_reductor::PODReductor{NOUT}, parameters::AbstractVector;
     if noise >= 1
         println("Forming SVD of snapshot matrix")
     end
-    U, S, _ = svd(pod_reductor.snapshots)
-    pod_reductor.S .= S
-    pod_reductor.V .= U
+    if forced_real
+        U, S, _ = svd(hcat(real.(pod_reductor.snapshots), imag.(pod_reductor.snapshots)))
+        pod_reductor.S .= S
+        pod_reductor.V .= U
+    else
+        U, S, _ = svd(pod_reductor.snapshots)
+        pod_reductor.S .= S
+        pod_reductor.V .= U
+    end
     nothing
 end
 
@@ -102,9 +126,10 @@ end
 `form_rom(pod_reductor, r=-1)`
 
 Pulls the first `r` left singular vectors from 
-`pod_reductor.decomp`, and then Galerkin projects
+`pod_reductor.V`, and then Galerkin projects
 `pod_reductor.model` onto that basis, and returns
-the resulting ROM.
+the resulting ROM. If `r=-1`, uses largest size
+possible.
 """
 function form_rom(pod_reductor::PODReductor, r=-1)
     V = Matrix(pod_reductor.V)
