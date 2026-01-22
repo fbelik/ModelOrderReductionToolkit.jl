@@ -208,6 +208,11 @@ function add_to_rb!(wg_reductor::WGReductor{NOUT}, params::AbstractVector; noise
         elseif noise >= 1
             @printf("After orthogonalizing, imaginary part of truth vector had norm %.2e < zero_tol, not appending to RB\n", nx2)
         end
+        if nx1 >= zero_tol && nx2 >= zero_tol
+            # Repush errors to be able to compare with real RB dimension
+            push!(wg_reductor.approx_errors, max_error)
+            push!(wg_reductor.truth_errors, truth_error)
+        end
         if nx1 < zero_tol && nx2 < zero_tol
             return false
         end
