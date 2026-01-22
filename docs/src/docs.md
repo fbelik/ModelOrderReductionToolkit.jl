@@ -13,6 +13,8 @@ to_ss
 to_dss
 to_ode_problem
 bode
+poles
+poles_and_vectors
 ```
 
 ### Reductors
