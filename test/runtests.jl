@@ -4,7 +4,7 @@ using SparseArrays
 using LinearAlgebra
 
 @testset "LinearModel" begin
-    model = PoissonModel(Nx=100)
+    model = PoissonModel()
     r = 20; ERR_TOL = 1e-2
     params = [[i,j,k] for i in range(0,1,5) for j in range(0,1,5) for k in range(0,1,5)]
     # POD Reductor
