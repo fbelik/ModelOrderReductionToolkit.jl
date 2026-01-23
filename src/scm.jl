@@ -53,6 +53,8 @@ end
 """
 `ANLSCM{P} <: AbstractSCM <: Function where P <: Int`
 
+WARNING: Below method is experimental and still in development.
+
 An SCM object for an APArray matrix `Ap` which uses nonlinear
 constraining. 
 
