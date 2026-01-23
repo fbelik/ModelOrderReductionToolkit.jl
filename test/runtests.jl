@@ -75,7 +75,7 @@ end
     # Balanced truncation
     bt_reductor = BTReductor(model, p0)
     rom = form_rom(bt_reductor, r)
-    omegas = logrange(1e-2,1e3,100)
+    omegas = 10.0 .^ range(-2,3,100)
     bodeerr = abs.(bode(model, omegas, first=true) .- bode(rom, omegas, first=true))
     @test maximum(bodeerr) < ERR_TOL
     # IRKA
