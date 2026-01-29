@@ -93,5 +93,8 @@ export galerkin_project
 export galerkin_add!
 export output_length
 export output_type
+export reachability_gramian
+export observability_gramian
+export H2_norm
 
 end

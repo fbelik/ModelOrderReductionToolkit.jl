@@ -1,11 +1,15 @@
 """
 `model = LTIModel(A_in, B_in, C_in, D_in=0, E_in=I) <: NonstationaryModel`
+
 `model = LTIModel(lti<:AbstractStateSpace) <: NonstationaryModel`
+
 `model = LTIModel(lti<:AbstractDescriptorStateSpace) <: NonstationaryModel`
 
 Struct for containing a parameterized LTI model
-`E(p) x'(t,p) = A(p) x(t,p) + B(p) u(t)`
-`y(t,p) = C(p) x(t,p) + D(p) u(t)`
+```math
+E(p) x'(t,p) = A(p) x(t,p) + B(p) u(t)
+y(t,p) = C(p) x(t,p) + D(p) u(t)
+```
 with affine parameter dependence where `u(t)` is some
 input signal. Can initialize the system to a given 
 parameter `p` by calling `model(p)`.
@@ -51,6 +55,205 @@ function LTIModel(A_in::Union{AbstractMatrix,APArray},
         end
     end
     return LTIModel(arrs..., aparrs...)
+end
+
+import Base: -
+
+function -(m1::LTIModel, m2::LTIModel)
+    n1_out = size(m1.C, 1)
+    n2_out = size(m2.C, 1)
+    @assert n1_out == n2_out
+    n1 = size(m1.A, 1)
+    n2 = size(m2.A, 1)
+    n1_in = size(m1.B, 2)
+    n2_in = size(m2.B, 2)
+    n_in = max(n1_in, n2_in)
+    # A is block diagonal of A's
+    A_in = begin
+        if isnothing(m1.Ap) && isnothing(m2.Ap)
+            vcat(hcat(m1.A, spzeros(n1, n2)), hcat(spzeros(n2, n1), m2.A))
+        elseif isnothing(m2.Ap)
+            arrs = [vcat(hcat(A, spzeros(n1, n2)), hcat(spzeros(n2, n1), spzeros(n2, n2))) for A in m1.Ap.arrays]
+            push!(arrs, vcat(hcat(spzeros(n1, n1), spzeros(n1, n2)), hcat(spzeros(n2, n1), m2.A)))
+            makeθi = if m1.Ap.precompθ
+                p -> [m1.Ap(p) ; [1]]
+            else
+                (p,i) -> i <= length(m1.Ap.arrays) ? m1.Ap.makeθi(p,i) : 1
+            end
+            APArray(arrs, makeθi)
+        elseif isnothing(m1.Ap)
+            arrs = [vcat(hcat(spzeros(n1, n1), spzeros(n1, n2)), hcat(spzeros(n2, n1), A)) for A in m2.Ap.arrays]
+            push!(arrs, vcat(hcat(m1.A, spzeros(n1, n2)), hcat(spzeros(n2, n1), spzeros(n2, n2))))
+            makeθi = if m2.Ap.precompθ
+                p -> [m2.Ap(p) ; [1]]
+            else
+                (p,i) -> i <= length(m2.Ap.arrays) ? m2.Ap.makeθi(p,i) : 1
+            end
+            APArray(arrs, makeθi)
+        else
+            arrs = [vcat(hcat(A, spzeros(n1, n2)), hcat(spzeros(n2, n1), spzeros(n2, n2))) for A in m1.Ap.arrays]
+            append!(arrs, [vcat(hcat(spzeros(n1, n1), spzeros(n1, n2)), hcat(spzeros(n2, n1), A)) for A in m2.Ap.arrays])
+            makeθi = if m1.Ap.precompθ && m2.Ap.precompθ
+                p -> [m1.Ap(p) ; m2.Ap(p)]
+            elseif m2.Ap.precompθ
+                p -> [[m1.Ap(p,i) for i in eachindex(m1.Ap.arrays)] ; m2.Ap(p)]
+            elseif m1.Ap.precompθ
+                p -> [m1.Ap(p) ; [m2.Ap(p,i) for i in eachindex(m2.Ap.arrays)]]
+            else
+                (p,i) -> i <= length(m1.Ap.arrays) ? m1.Ap.makeθi(p,i) : m2.Ap.makeθi(p,i - length(m1.Ap.arrays))
+            end
+            APArray(arrs, makeθi)
+        end
+    end
+    # E is block diagonal of E's
+    E_in = begin
+        if isnothing(m1.Ep) && isnothing(m2.Ep)
+            vcat(hcat(m1.E, spzeros(n1, n2)), hcat(spzeros(n2, n1), m2.E))
+        elseif isnothing(m2.Ep)
+            arrs = [vcat(hcat(E, spzeros(n1, n2)), hcat(spzeros(n2, n1), spzeros(n2, n2))) for E in m1.Ep.arrays]
+            push!(arrs, vcat(hcat(spzeros(n1, n1), spzeros(n1, n2)), hcat(spzeros(n2, n1), m2.E)))
+            makeθi = if m1.Ep.precompθ
+                p -> [m1.Ep(p) ; [1]]
+            else
+                (p,i) -> i <= length(m1.Ep.arrays) ? m1.Ep.makeθi(p,i) : 1
+            end
+            APArray(arrs, makeθi)
+        elseif isnothing(m1.Ep)
+            arrs = [vcat(hcat(spzeros(n1, n1), spzeros(n1, n2)), hcat(spzeros(n2, n1), E)) for E in m2.Ep.arrays]
+            push!(arrs, vcat(hcat(m1.E, spzeros(n1, n2)), hcat(spzeros(n2, n1), spzeros(n2, n2))))
+            makeθi = if m2.Ep.precompθ
+                p -> [m2.Ep(p) ; [1]]
+            else
+                (p,i) -> i <= length(m2.Ep.arrays) ? m2.Ep.makeθi(p,i) : 1
+            end
+            APArray(arrs, makeθi)
+        else
+            arrs = [vcat(hcat(E, spzeros(n1, n2)), hcat(spzeros(n2, n1), spzeros(n2, n2))) for E in m1.Ep.arrays]
+            append!(arrs, [vcat(hcat(spzeros(n1, n1), spzeros(n1, n2)), hcat(spzeros(n2, n1), A)) for A in m2.Ep.arrays])
+            makeθi = if m1.Ep.precompθ && m2.Ep.precompθ
+                p -> [m1.Ep(p) ; m2.Ep(p)]
+            elseif m2.Ep.precompθ
+                p -> [[m1.Ep(p,i) for i in eachindex(m1.Ep.arrays)] ; m2.Ep(p)]
+            elseif m1.Ep.precompθ
+                p -> [m1.Ep(p) ; [m2.Ep(p,i) for i in eachindex(m2.Ep.arrays)]]
+            else
+                (p,i) -> i <= length(m1.Ep.arrays) ? m1.Ep.makeθi(p,i) : m2.Ep.makeθi(p,i - length(m1.Ep.arrays))
+            end
+            APArray(arrs, makeθi)
+        end
+    end
+    # B is vstacked B's
+    B_in = begin
+        if isnothing(m1.Bp) && isnothing(m2.Bp)
+            vcat(hcat(m1.B, spzeros(n1, n_in - n1_in)), hcat(m2.B, spzeros(n2, n_in - n2_in)))
+        elseif isnothing(m2.Bp)
+            arrs = [vcat(hcat(B, spzeros(n1, n_in - n1_in)), hcat(spzeros(n2, n2_in), spzeros(n2, n_in - n2_in))) for B in m1.Bp.arrays]
+            push!(arrs, vcat(hcat(spzeros(n1, n1_in), spzeros(n1, n_in - n1_in)), hcat(m2.B, spzeros(n2, n_in - n2_in))))
+            makeθi = if m1.Bp.precompθ
+                p -> [m1.Bp(p) ; [1]]
+            else
+                (p,i) -> i <= length(m1.Bp.arrays) ? m1.Bp.makeθi(p,i) : 1
+            end
+            APArray(arrs, makeθi)
+        elseif isnothing(m1.Bp)
+            arrs = [vcat(hcat(spzeros(n1, n1_in), spzeros(n1, n_in - n1_in)), hcat(B, spzeros(n2, n_in - n2_in))) for B in m2.Bp.arrays]
+            push!(arrs, vcat(hcat(m1.B, spzeros(n1, n_in - n1_in)), hcat(spzeros(n2, n2_in), spzeros(n2, n_in - n2_in))))
+            makeθi = if m2.Bp.precompθ
+                p -> [m2.Bp(p) ; [1]]
+            else
+                (p,i) -> i <= length(m2.Bp.arrays) ? m2.Bp.makeθi(p,i) : 1
+            end
+            APArray(arrs, makeθi)
+        else
+            arrs = [vcat(hcat(B, spzeros(n1, n_in - n1_in)), hcat(spzeros(n2, n2_in), spzeros(n2, n_in - n2_in))) for B in m1.Bp.arrays]
+            append!(arrs, [vcat(hcat(spzeros(n1, n1_in), spzeros(n1, n_in - n1_in)), hcat(B, spzeros(n2, n_in - n2_in))) for B in m2.Bp.arrays])
+            makeθi = if m1.Bp.precompθ && m2.Bp.precompθ
+                p -> [m1.Bp(p) ; m2.Bp(p)]
+            elseif m2.Bp.precompθ
+                p -> [[m1.Bp(p,i) for i in eachindex(m1.Bp.arrays)] ; m2.Bp(p)]
+            elseif m1.Bp.precompθ
+                p -> [m1.Bp(p) ; [m2.Bp(p,i) for i in eachindex(m2.Bp.arrays)]]
+            else
+                (p,i) -> i <= length(m1.Bp.arrays) ? m1.Bp.makeθi(p,i) : m2.Bp.makeθi(p,i - length(m1.Bp.arrays))
+            end
+            APArray(arrs, makeθi)
+        end
+    end
+    # C is hstacked C's
+    C_in = begin
+        if isnothing(m1.Cp) && isnothing(m2.Cp)
+            hcat(m1.C, -1 .* m2.C)
+        elseif isnothing(m2.Cp)
+            arrs = [hcat(C, spzeros(size(m2.C))) for C in m1.Cp.arrays]
+            push!(arrs, hcat(spzeros(size(m1.C)), m2.C))
+            makeθi = if m1.Cp.precompθ
+                p -> [m1.Cp(p) ; [-1]]
+            else
+                (p,i) -> i <= length(m1.Cp.arrays) ? m1.Cp.makeθi(p,i) : -1
+            end
+            APArray(arrs, makeθi)
+        elseif isnothing(m1.Cp)
+            arrs = [hcat(spzeros(size(m1.C), C)) for C in m2.Cp.arrays]
+            push!(arrs, hcat(spzeros(size(m1.C)), m2.C))
+            makeθi = if m2.Cp.precompθ
+                p -> [-1 .* m2.Cp(p) ; [1]]
+            else
+                (p,i) -> i <= length(m2.Cp.arrays) ? -1 * m2.Cp.makeθi(p,i) : 1
+            end
+            APArray(arrs, makeθi)
+        else
+            arrs = [hcat(C, spzeros(size(m2.C))) for C in m1.Cp.arrays]
+            append!(arrs, [hcat(spzeros(size(m1.C), C)) for C in m2.Cp.arrays])
+            makeθi = if m1.Cp.precompθ && m2.Cp.precompθ
+                p -> [m1.Cp(p) ; -1 .* m2.Cp(p)]
+            elseif m2.Cp.precompθ
+                p -> [[m1.Cp(p,i) for i in eachindex(m1.Cp.arrays)] ; -1 .* m2.Cp(p)]
+            elseif m1.Cp.precompθ
+                p -> [m1.Cp(p) ; [-1 * m2.Cp(p,i) for i in eachindex(m2.Cp.arrays)]]
+            else
+                (p,i) -> i <= length(m1.Cp.arrays) ? m1.Cp.makeθi(p,i) : -1 * m2.Cp.makeθi(p,i - length(m1.Cp.arrays))
+            end
+            APArray(arrs, makeθi)
+        end
+    end
+    # D is difference between Ds
+    D_in = begin
+        if isnothing(m1.Dp) && isnothing(m2.Dp)
+            hcat(m1.D, zeros(n1_out, n_in - n1_in)) .- hcat(m2.D, zeros(n1_out, n_in - n2_in)) 
+        elseif isnothing(m2.Dp)
+            arrs = [hcat(D, zeros(n1_out, n_in - n1_in)) for D in m1.Dp.arrays]
+            push!(arrs, hcat(m2.D, zeros(n1_out, n_in - n2_in)))
+            makeθi = if m1.Dp.precompθ
+                p -> [m1.Dp(p) ; [-1]]
+            else
+                (p,i) -> i <= length(m1.Dp.arrays) ? m1.Dp.makeθi(p,i) : -1
+            end
+            APArray(arrs, makeθi)
+        elseif isnothing(m1.Dp)
+            arrs = [hcat(D, zeros(n1_out, n_in - n2_in)) for D in m2.Dp.arrays]
+            push!(arrs, hcat(m1.D, zeros(n1_out, n_in - n1_in)))
+            makeθi = if m2.Dp.precompθ
+                p -> [-1 .* m2.Dp(p) ; [1]]
+            else
+                (p,i) -> i <= length(m2.Dp.arrays) ? -1 * m2.Dp.makeθi(p,i) : 1
+            end
+            APArray(arrs, makeθi)
+        else
+            arrs = [hcat(D, zeros(n1_out, n_in - n1_in)) for D in m1.Dp.arrays]
+            append!(arrs, [hcat(D, zeros(n1_out, n_in - n2_in)) for D in m2.Dp.arrays])
+            makeθi = if m1.Dp.precompθ && m2.Dp.precompθ
+                p -> [m1.Dp(p) ; -1 .* m2.Dp(p)]
+            elseif m2.Dp.precompθ
+                p -> [[m1.Dp(p,i) for i in eachindex(m1.Dp.arrays)] ; -1 .* m2.Dp(p)]
+            elseif m1.Dp.precompθ
+                p -> [m1.Dp(p) ; [-1 * m2.Dp(p,i) for i in eachindex(m2.Dp.arrays)]]
+            else
+                (p,i) -> i <= length(m1.Dp.arrays) ? m1.Dp.makeθi(p,i) : -1 * m2.Dp.makeθi(p,i - length(m1.Dp.arrays))
+            end
+            APArray(arrs, makeθi)
+        end
+    end
+    return LTIModel(A_in, B_in, C_in, D_in, E_in)
 end
 
 function Base.show(io::Core.IO, model::LTIModel)
@@ -124,7 +327,27 @@ function bode(model::LTIModel, ω::Real, p=nothing; first=true)
         model(p)
     end
     s = ω*im
-    res = model.C * ((s*model.E - model.A) \ model.B) .+ model.D
+    res = begin
+        if issparse(model.B)
+            if issparse(model.C)
+                if size(model.B, 2) <= size(model.C, 1)
+                    model.C * ((s*model.E - model.A) \ collect(model.B)) .+ model.D
+                else
+                    (collect(model.C) / (s*model.E - model.A)) * model.B .+ model.D
+                end
+            else
+                (model.C / (s*model.E - model.A)) * model.B .+ model.D
+            end
+        elseif issparse(model.C)
+            model.C * ((s*model.E - model.A) \ model.B) .+ model.D
+        else
+            if size(model.B, 2) <= size(model.C, 1)
+                model.C * ((s*model.E - model.A) \ model.B) .+ model.D
+            else
+                (model.C / (s*model.E - model.A)) * model.B .+ model.D
+            end
+        end
+    end
     if first
         return res[1,1]
     else

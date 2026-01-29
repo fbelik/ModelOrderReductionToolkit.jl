@@ -60,7 +60,7 @@ function BTReductor(model::LTIModel, p=nothing; noise=0, iterative::Union{Bool,N
             (glyap_lradi_r(model.A, model.E, model.B, noise=noise, eps=lradi_eps, maxdim=maxdim),
              glyap_lradi_r(model.A', model.E, model.C', noise=noise, eps=lradi_eps, maxdim=maxdim))
         else
-            E = model.E
+            E = isa(model.E, UniformScaling) ? model.E : Matrix(model.E')'
             _R = plyapc(Matrix(model.A')', E, Matrix(model.B')')'
             imax = findfirst(x -> norm(x) < dense_row_tol, eachcol(_R))
             _R = isnothing(imax) ? _R : view(_R, :, 1:imax)
@@ -77,7 +77,7 @@ function BTReductor(model::LTIModel, p=nothing; noise=0, iterative::Union{Bool,N
 end
 
 """
-`P = reachability_gramian(reductor)`
+`P = reachability_gramian(reductor::BTReductor)`
 
 Helper method for forming the reachability Gramian.
 """
@@ -86,12 +86,63 @@ function reachability_gramian(reductor::BTReductor)
 end
 
 """
-`Q = observability_gramian(reductor)`
+`P = reachability_gramian(model::LTIModel[, p=nothing; kwargs...])`
+
+Helper method for forming the reachability Gramian for an `LTIModel`
+at parameter `p`. See `BTReductor` for kwargs.
+"""
+function reachability_gramian(model::LTIModel, p=nothing; kwargs...)
+    reductor = BTReductor(model, p; kwargs...)
+    return reachability_gramian(reductor)
+end
+
+"""
+`Q = observability_gramian(reductor::BTReductor)`
 
 Helper method for forming the observability Gramian.
 """
 function observability_gramian(reductor::BTReductor)
     return reductor.L * reductor.L'
+end
+
+"""
+`Q = observability_gramian(model::LTIModel[, p=nothing; kwargs...])`
+
+Helper method for forming the observability Gramian for an `LTIModel`
+at parameter `p`. See `BTReductor` for kwargs.
+"""
+function observability_gramian(model::LTIModel, p=nothing; kwargs...)
+    reductor = BTReductor(model, p; kwargs...)
+    return observability_gramian(reductor)
+end
+
+"""
+`H2_norm(reductor::BTReductor[, withP=true])`
+
+Uses the Gramians of the `reductor` object to compute the
+``\\mathcal{H}_2`` norm of `reductor.model`. If `withP==true`,
+uses the reachability Grammian, otherwise uses the 
+observatility Grammian.
+"""
+function H2_norm(reductor::BTReductor, withP=true)
+    if withP
+        # trace(C P Cᵀ) = trace(C R R' C') = || C R ||_F^2
+        return norm(reductor.model.C * reductor.R)
+    else
+        # trace(Bᵀ Q B) = trace(Bᵀ L L' B) = || L' B ||_F^2
+        return norm(reductor.L' * reductor.model.B)
+    end
+end
+
+"""
+`H2_norm(model::LTIModel[, p=nothing; withP=true, kwargs...])`
+
+Forms a `BTReductor` and computes the ``\\mathcal{H}_2`` norm of the 
+`model`. See `BTReductor` for kwargs.
+"""
+function H2_norm(model::LTIModel, p=nothing; withP=true, kwargs...)
+    reductor = BTReductor(model, p; kwargs...)
+    return H2_norm(reductor, withP)
 end
 
 """

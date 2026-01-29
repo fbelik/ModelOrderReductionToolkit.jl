@@ -111,10 +111,17 @@ end
     estimator = StabilityResidualErrorEstimator(freq_model, p -> 1.0)
     wg_reductor = WGReductor(freq_model, estimator, force_rb_real=true)
     add_to_rb!(wg_reductor, params, div(r,2))
-    rom = galerkin_project(model, Matrix(sg_reductor.V[:,1:r]))
+    rom = galerkin_project(model, Matrix(wg_reductor.V[:,1:r]))
     omegas = 10.0 .^ range(-2,3,1000)
     for p in [[0,0,0],[0,0,50],[40,-40,0],[10,15,-15]]
         bodeerr = abs.(bode(model, omegas, p, first=true) .- bode(rom, omegas, p, first=true))
         @test maximum(bodeerr) < ERR_TOL
     end
+    # Test difference of LTI systems and H2 error
+    err_system = model - rom
+    for p in [[0,0,0],[0,0,50],[40,-40,0],[10,15,-15]]
+        @test H2_norm(err_system, p, iterative=true) <= 1e-4
+        @test H2_norm(err_system, p, iterative=false) <= 1e-4
+    end
+    
 end
