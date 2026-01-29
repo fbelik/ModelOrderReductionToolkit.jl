@@ -15,6 +15,9 @@ to_ode_problem
 bode
 poles
 poles_and_vectors
+observability_gramian
+reachability_gramian
+H2_norm
 ```
 
 ### Reductors
