@@ -74,6 +74,11 @@ end
     p0 = zeros(3)
     # Balanced truncation
     bt_reductor = BTReductor(model, p0, iterative=true)
+    # Test Hinf error compared to HSVs
+    rom = form_rom(bt_reductor, 10)
+    hinferr = Hinf_error(model, rom, p0)
+    @test isapprox(hinferr, 2 * sum(bt_reductor.hs[(r+1):end]), rtol=0.05)
+    # Test with r=20
     rom = form_rom(bt_reductor, r)
     omegas = 10.0 .^ range(-2,3,100)
     bodeerr = abs.(bode(model, omegas, first=true) .- bode(rom, omegas, first=true))
@@ -82,6 +87,7 @@ end
     @test hinferr < ERR_TOL
     @test isapprox(hinferr, 2 * sum(bt_reductor.hs[(r+1):end]), rtol=0.05)
     @test hinferr >= maximum(bodeerr)
+    # Test with non-iterative method 
     bt_reductor = BTReductor(model, p0, iterative=false)
     rom = form_rom(bt_reductor, r)
     omegas = 10.0 .^ range(-2,3,100)
