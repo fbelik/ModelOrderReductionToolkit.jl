@@ -31,6 +31,7 @@ include("reductors/pod.jl")
 include("reductors/strong_greedy.jl")
 include("reductors/weak_greedy.jl")
 include("reductors/bt.jl")
+include("reductors/irka.jl")
 # Linear Algebra exports
 export svd
 export qr
@@ -66,6 +67,8 @@ export LinearModel
 export LinearMatrixModel
 export LTIModel
 export bode
+export poles
+export poles_and_vectors
 export to_frequency_domain
 export to_ode_problem
 export to_ss
@@ -78,6 +81,9 @@ export ParameterizedPenzlModel
 export PODReductor
 export SGReductor
 export WGReductor
+export BTReductor
+export SISOIRKAReductor
+export IRKAReductor
 export StabilityResidualErrorEstimator
 export form_rom
 export add_to_rb!
@@ -87,6 +93,11 @@ export galerkin_project
 export galerkin_add!
 export output_length
 export output_type
-export BTReductor
+export reachability_gramian
+export observability_gramian
+export H2_norm
+export H2_error
+export Hinf_norm
+export Hinf_error
 
 end

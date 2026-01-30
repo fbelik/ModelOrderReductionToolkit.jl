@@ -134,7 +134,7 @@ end
 
 Add the vector `row` to the last column of `vov`.
 """
-function addCol!(vov::VOV{T}, col::AbstractVector{T}) where T
+function addCol!(vov::VOV{T}, col::AbstractVector) where T
     nrows = vov.size[1]
     if length(col) != nrows
         error("New column must have the correct length")

@@ -343,8 +343,8 @@ function orthonormalize_mgs2!(u::AbstractVector,V::AbstractMatrix)
     return nu
 end
 
-function max_real_numerical_range(A)
-    return largest_real_eigval(0.5 .* (A .+ A'), 1000)
+function max_real_numerical_range(A; reigkwargs...)
+    return reig(0.5 .* (A .+ A'),  which=:L; reigkwargs...)
 end
 
 function nrange(B; nk=1, thmax=32)

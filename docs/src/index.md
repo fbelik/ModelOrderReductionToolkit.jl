@@ -100,7 +100,7 @@ Also implements `to_ss(model[, p=nothing])` to convert a model to a `ControlSyst
 
 ### BT Reductor
 
-The state of the art method for reducing a non-parameterized LTI problem is through balanced truncation. This can be performed with a `BTReductor` object.
+One method for reducing a non-parameterized LTI problem is through balanced truncation. This can be performed with a `BTReductor` object.
 ```@docs
 BTReductor
 ```
@@ -114,6 +114,21 @@ rom = form_rom(reductor, 20)
 ```
 
 See source 4 for more information on the iterative method for solving Lyapunov equations used by `BTReductor` when `iterative==true`, and see `MatrixEquations.jl` for the non-sparse Lyapunov solver. See source 5 for the Penzl model example and for more information on truncation of LTI systems.
+
+### IRKA Reductor
+IRKA is an interpolatory-based method for model reduction of real non-parametric systems, although extensions to parametric systems exist. It is a method for attaining a locally $H_2$ optimal reduced order model through an iterative approach. An `IRKAReductor` for a nonparametric problem (or a parametric problem at fixed `p`) can be formed by either of the following methods.
+```@docs
+IRKAReductor
+```
+
+After iteration, the shifts (opposites of reduced system poles) can be obtained through `irka_reductor.shifts`, and the relative change at each iteration is stored in `irka_reductor.deltas`. As with other reductors, has `form_rom` and `lift` implemented.
+```julia
+model = PenzlModel()
+reductor = IRKAReductor(model, 10)
+rom = form_rom(reductor)
+```
+
+See source 7 for more info on IRKA.
 
 ### RB Reduction
 
@@ -136,3 +151,4 @@ rom = galerkin_project(model, Matrix(reductor.V[:,1:20])) # Faster when converti
 4. Patrick Kürschner and Peter Benner. Efficient low-rank solutions of large-scale matrix equations. Forschungsberichte aus dem Max-Planck-Institut für Dynamik Komplexer Technischer Systeme. 2016. https://pure.mpg.de/rest/items/item_2246796_7/component/file_2296741/content.
 5. Thilo Penzl. Algorithms for model reduction of large dynamical systems. Linear Algebra and its Applications. Volume 415, Issue 2, Pages 322-343. June 1, 2006. https://www.sciencedirect.com/science/article/pii/S0024379506000371.
 6. D.B.P. Huynh, D.J. Knezevic, Y. Chen, J.S. Hesthaven, A.T. Patera. A natural-norm Successive Constraint Method for inf-sup lower bounds. Computer Methods in Applied Mechanics and Engineering. Volume 199, Issue 29. June 1, 2010. https://www.sciencedirect.com/science/article/pii/S0045782510000691.
+7. Baur et al. Interpolatory Projection Methods for Parameterized Model Reduction. SIAM Journal on Scientific Computing. Volume 33, Issue 5. January, 2011. https://epubs.siam.org/doi/10.1137/090776925.

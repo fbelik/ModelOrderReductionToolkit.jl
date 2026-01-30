@@ -25,17 +25,18 @@ function Base.show(io::Core.IO, reductor::SGReductor)
 end
 
 """
-`sg_reductor = SGReductor(model)`
+`sg_reductor = SGReductor(model[; force_rb_real=false])`
 
-Forms a `SGReductor` object for `model <: StationaryModel`.
+Forms a `SGReductor` object for `model <: StationaryModel`. Forces
+the RB to be real if `force_rb_real==true`.
 """
-function SGReductor(model::StationaryModel) 
+function SGReductor(model::StationaryModel; force_rb_real=false) 
     T = output_type(model)
     N = output_length(model)
     snapshots = VectorOfVectors(N, 0, T)
     p = Int[]
     parameters = Set()
-    V = VectorOfVectors(N, 0, T)
+    V = VectorOfVectors(N, 0, force_rb_real ? real(T) : T)
     return SGReductor(model, snapshots, p, parameters, V)
 end
 
@@ -47,20 +48,32 @@ the columns of the matrix `snapshots`.
 """
 function add_to_rb!(sg_reductor::SGReductor, snapshots::AbstractMatrix; noise=0)
     @assert size(snapshots, 1) == size(sg_reductor.snapshots, 1)
+    forced_real = eltype(sg_reductor.snapshots) <: Complex && eltype(sg_reductor.V) <: Real
     for x in eachcol(snapshots)
         addCol!(sg_reductor.snapshots)
         if size(sg_reductor.V, 2) < output_length(sg_reductor.model)
             addCol!(sg_reductor.V)
-            push!(sg_reductor.p, 0)
+            push!(sg_reductor.p, 0.0)
+            if size(sg_reductor.V, 2) < output_length(sg_reductor.model) && forced_real
+                addCol!(sg_reductor.V)
+                push!(sg_reductor.p, 0.0)
+            end
         end
         sg_reductor.snapshots[:,end] .= x
     end
     if noise >= 1
         println("Forming column-pivoted QR of snapshot matrix")
     end
-    decomp = qr(sg_reductor.snapshots, ColumnNorm())
-    sg_reductor.V .= decomp.Q[:, 1:min(size(sg_reductor.snapshots, 2),output_length(sg_reductor.model))]
-    sg_reductor.p .= decomp.p[eachindex(sg_reductor.p)]
+    if forced_real
+        real_snapshots = hcat(real.(sg_reductor.snapshots), imag.(sg_reductor.snapshots))
+        decomp = qr(real_snapshots, ColumnNorm())
+        sg_reductor.V .= decomp.Q[:, eachindex(sg_reductor.p)]
+        sg_reductor.p .= decomp.p[eachindex(sg_reductor.p)]
+    else
+        decomp = qr(sg_reductor.snapshots, ColumnNorm())
+        sg_reductor.V .= decomp.Q[:, eachindex(sg_reductor.p)]
+        sg_reductor.p .= decomp.p[eachindex(sg_reductor.p)]
+    end
     nothing
 end
 
@@ -76,6 +89,7 @@ function add_to_rb!(sg_reductor::SGReductor{NOUT}, parameters::AbstractVector; n
     if noise >= 1
         println("Adding to RB by forming full order solutions")
     end
+    forced_real = eltype(sg_reductor.snapshots) <: Complex && eltype(sg_reductor.V) <: Real
     for (i,p) in (progress ? ProgressBar(enumerate(parameters)) : enumerate(parameters))
         if p in sg_reductor.parameters
             continue
@@ -84,7 +98,11 @@ function add_to_rb!(sg_reductor::SGReductor{NOUT}, parameters::AbstractVector; n
             addCol!(sg_reductor.snapshots)
             if size(sg_reductor.V, 2) < output_length(sg_reductor.model)
                 addCol!(sg_reductor.V)
-                push!(sg_reductor.p, 0)
+                push!(sg_reductor.p, 0.0)
+                if size(sg_reductor.V, 2) < output_length(sg_reductor.model) && forced_real
+                    addCol!(sg_reductor.V)
+                    push!(sg_reductor.p, 0.0)
+                end
             end
             sg_reductor.snapshots[:,end] .= sg_reductor.model(p, j)
         end
@@ -93,9 +111,16 @@ function add_to_rb!(sg_reductor::SGReductor{NOUT}, parameters::AbstractVector; n
     if noise >= 1
         println("Forming column-pivoted QR of snapshot matrix")
     end
-    decomp = qr(sg_reductor.snapshots, ColumnNorm())
-    sg_reductor.V .= decomp.Q[:, 1:min(size(sg_reductor.snapshots, 2),output_length(sg_reductor.model))]
-    sg_reductor.p .= decomp.p[eachindex(sg_reductor.p)]
+    if forced_real
+        real_snapshots = hcat(real.(sg_reductor.snapshots), imag.(sg_reductor.snapshots))
+        decomp = qr(real_snapshots, ColumnNorm())
+        sg_reductor.V .= decomp.Q[:, eachindex(sg_reductor.p)]
+        sg_reductor.p .= decomp.p[eachindex(sg_reductor.p)]
+    else
+        decomp = qr(sg_reductor.snapshots, ColumnNorm())
+        sg_reductor.V .= decomp.Q[:, eachindex(sg_reductor.p)]
+        sg_reductor.p .= decomp.p[eachindex(sg_reductor.p)]
+    end
     nothing
 end
 

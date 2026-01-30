@@ -60,7 +60,7 @@ function BTReductor(model::LTIModel, p=nothing; noise=0, iterative::Union{Bool,N
             (glyap_lradi_r(model.A, model.E, model.B, noise=noise, eps=lradi_eps, maxdim=maxdim),
              glyap_lradi_r(model.A', model.E, model.C', noise=noise, eps=lradi_eps, maxdim=maxdim))
         else
-            E = model.E
+            E = isa(model.E, UniformScaling) ? model.E : Matrix(model.E')'
             _R = plyapc(Matrix(model.A')', E, Matrix(model.B')')'
             imax = findfirst(x -> norm(x) < dense_row_tol, eachcol(_R))
             _R = isnothing(imax) ? _R : view(_R, :, 1:imax)
@@ -77,7 +77,7 @@ function BTReductor(model::LTIModel, p=nothing; noise=0, iterative::Union{Bool,N
 end
 
 """
-`P = reachability_gramian(reductor)`
+`P = reachability_gramian(reductor::BTReductor)`
 
 Helper method for forming the reachability Gramian.
 """
@@ -86,12 +86,159 @@ function reachability_gramian(reductor::BTReductor)
 end
 
 """
-`Q = observability_gramian(reductor)`
+`P = reachability_gramian(model::LTIModel[, p=nothing; kwargs...])`
+
+Helper method for forming the reachability Gramian for an `LTIModel`
+at parameter `p`. See `BTReductor` for kwargs.
+"""
+function reachability_gramian(model::LTIModel, p=nothing; kwargs...)
+    reductor = BTReductor(model, p; kwargs...)
+    return reachability_gramian(reductor)
+end
+
+"""
+`Q = observability_gramian(reductor::BTReductor)`
 
 Helper method for forming the observability Gramian.
 """
 function observability_gramian(reductor::BTReductor)
     return reductor.L * reductor.L'
+end
+
+"""
+`Q = observability_gramian(model::LTIModel[, p=nothing; kwargs...])`
+
+Helper method for forming the observability Gramian for an `LTIModel`
+at parameter `p`. See `BTReductor` for kwargs.
+"""
+function observability_gramian(model::LTIModel, p=nothing; kwargs...)
+    reductor = BTReductor(model, p; kwargs...)
+    return observability_gramian(reductor)
+end
+
+"""
+`H2_norm(reductor::BTReductor[, withP=true])`
+
+Uses the Gramians of the `reductor` object to compute the
+``\\mathcal{H}_2`` norm of `reductor.model`. If `withP==true`,
+uses the reachability Grammian, otherwise uses the 
+observatility Grammian.
+"""
+function H2_norm(reductor::BTReductor, withP=true)
+    if withP
+        # trace(C P Cᵀ) = trace(C R R' C') = || C R ||_F^2
+        return norm(reductor.model.C * reductor.R)
+    else
+        # trace(Bᵀ Q B) = trace(Bᵀ L L' B) = || L' B ||_F^2
+        return norm(reductor.L' * reductor.model.B)
+    end
+end
+
+"""
+`H2_norm(model::LTIModel[, p=nothing; withP=true, kwargs...])`
+
+Forms a `BTReductor` and computes the ``\\mathcal{H}_2`` norm of the 
+`model`. See `BTReductor` for kwargs.
+"""
+function H2_norm(model::LTIModel, p=nothing; withP=true, kwargs...)
+    reductor = BTReductor(model, p; kwargs...)
+    return H2_norm(reductor, withP)
+end
+
+"""
+`H2_error(m1::LTIModel, m2::LTIModel[, p=nothing; withP=true, kwargs...])`
+
+Forms a `BTReductor` and computes the ``\\mathcal{H}_2`` norm of the 
+difference between the models. See `BTReductor` for kwargs.
+"""
+function H2_error(m1::LTIModel, m2::LTIModel, p=nothing; withP=true, kwargs...)
+    diff = m1 - m2
+    if !isnothing(p)
+        diff(p)
+    end
+    return H2_norm(diff, p, withP=withP; kwargs...)
+end
+
+"""
+`Hinf_norm(reductor::BTReductor[, max_iter=100, imag_tol=1e-4, real_tol=1e-4, reltol=1e-2, noise=0])`
+
+Uses the bisection method to compute the `\\mathcal{H}_\\infty`` norm of the
+model `reductor.model`. See the following reference.
+
+https://web.stanford.edu/~boyd/papers/pdf/bisection_hinfty.pdf
+"""
+function Hinf_norm(reductor::BTReductor; max_iter=100, imag_tol=1e-4, real_tol=1e-4, reltol=1e-2, noise=0)
+    model = reductor.model
+    E = (isa(model.E, UniformScaling) || !issparse(model.E)) ? model.E : Matrix(model.E)
+    A = E \ model.A
+    B = model.B
+    C = model.C
+    D = model.D
+    sdmax = svd(reductor.model.D).S[1]
+    γlb = max(sdmax, reductor.hs[1])
+    γub = sdmax + 2 * sum(reductor.hs)
+    for iter in 1:max_iter
+        γ = (γlb + γub) / 2
+        if noise >= 1
+            @printf("Iteration %d: Bisecting (%.4e,%.4e)\n", iter, γlb, γub)
+        end
+        if γub - γlb <= 2 * reltol * γlb
+            return γ
+        end
+        Mγ = begin
+            if iszero(D)
+                [A      (B*B' ./ γ) ;
+                (-C'C ./ γ)  -A']
+            else
+                [A       0.0.*A ;
+                0.0.*A  -A'] .+ 
+                [B    spzeros(size(B,1),size(C,1)) ;
+                spzeros(size(B,2),size(C,2))  -C'] * 
+                [-D γ*I ;
+                γ*I -D'] \
+                [C    spzeros(size(C,1),size(B,1)) ;
+                spzeros(size(B,1),size(C,1))  B']
+            end
+        end
+        Λ = eigen(Matrix(Mγ)).values
+        if any(abs.(imag.(Λ)) .> imag_tol .&& abs.(real.(Λ)) .< real_tol)
+            γlb = γ
+        else
+            γub = γ
+        end
+    end
+    if noise >= 1
+        println("Did not converge in $max_iter iterations")
+    end
+    return (γlb + γub) / 2
+end
+
+"""
+`Hinf_norm(model::LTIModel[, p=nothing; kwargs...])`
+
+Forms a `BTReductor` and computes the ``\\mathcal{H}_\\infty`` norm of the 
+`model`. See `BTReductor` and `Hinf_norm` for kwargs.
+"""
+function Hinf_norm(model::LTIModel, p=nothing; max_iter=100, imag_tol=1e-4, real_tol=1e-4, reltol=1e-2, noise=0, kwargs...)
+    reductor = BTReductor(model, p; noise=noise, kwargs...)
+    return Hinf_norm(reductor, max_iter=max_iter, imag_tol=imag_tol, 
+                     real_tol=real_tol, reltol=reltol, noise=noise)
+end
+
+"""
+`Hinf_error(m1::LTIModel, m2::LTIModel[, p=nothing; kwargs...])`
+
+Forms a `BTReductor` and computes the ``\\mathcal{H}_\\infty`` norm of the 
+difference `m1 - m2`. See `BTReductor` and `Hinf_norm` for kwargs.
+
+https://web.stanford.edu/~boyd/papers/pdf/bisection_hinfty.pdf
+"""
+function Hinf_error(m1::LTIModel, m2::LTIModel, p=nothing; kwargs...)
+    diff = m1 - m2
+    if !isnothing(p)
+        diff(p)
+    end
+    return Hinf_norm(diff, p; kwargs...)
 end
 
 """
