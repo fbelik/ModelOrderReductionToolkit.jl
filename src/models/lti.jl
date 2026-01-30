@@ -108,7 +108,11 @@ function -(m1::LTIModel, m2::LTIModel)
     # E is block diagonal of E's
     E_in = begin
         if isnothing(m1.Ep) && isnothing(m2.Ep)
-            vcat(hcat(m1.E, spzeros(n1, n2)), hcat(spzeros(n2, n1), m2.E))
+            if isa(m1.E, UniformScaling) && isa(m2.E, UniformScaling) && m1.E == m2.E
+                m1.E
+            else
+                vcat(hcat(m1.E, spzeros(n1, n2)), hcat(spzeros(n2, n1), m2.E))
+            end
         elseif isnothing(m2.Ep)
             arrs = [vcat(hcat(E, spzeros(n1, n2)), hcat(spzeros(n2, n1), spzeros(n2, n2))) for E in m1.Ep.arrays]
             push!(arrs, vcat(hcat(spzeros(n1, n1), spzeros(n1, n2)), hcat(spzeros(n2, n1), m2.E)))
@@ -369,37 +373,34 @@ function bode(model::LTIModel, ωs::AbstractVector{<:Union{AbstractVector,Real}}
 end
 
 """
-`poles(model::LTIModel[, p=nothing])`
-
-Returns the poles (eigenvalues `Ax=λEx`) of the LTI system `model`
-at the parameter `p`.
-"""
-function poles(model::LTIModel, p=nothing)
-    if !isnothing(p)
-        model(p)
-    end
-    if isa(model.E, UniformScaling)
-        return eigen(model.E \ model.A).values
-    else
-        return eigen(model.A, model.E).values
-    end
-end
-
-"""
 `poles_and_vectors(model::LTIModel[, p=nothing])`
 
 Returns the eigenvalues and eigenvectors `Ax=λEx` of the LTI system 
-`model` at the parameter `p`.
+`model` at the parameter `p`. Warning: relies on dense LA, do not use
+for huge sparse systems.
 """
 function poles_and_vectors(model::LTIModel, p=nothing)
     if !isnothing(p)
         model(p)
     end
-    if isa(model.E, UniformScaling)
-        return eigen(model.E \ model.A)
+    A = model.A
+    E = model.E
+    if isa(E, UniformScaling)
+        return eigen(Matrix(E \ A))
     else
-        return eigen(model.A, model.E)
+        return eigen(Matrix(A), Matrix(E))
     end
+end
+
+"""
+`poles(model::LTIModel[, p=nothing])`
+
+Returns the poles (eigenvalues `Ax=λEx`) of the LTI system `model`
+at the parameter `p`. Warning: relies on dense LA, do not use
+for huge sparse systems.
+"""
+function poles(model::LTIModel, p=nothing)
+    return poles_and_vectors(model, p).values
 end
 
 """
