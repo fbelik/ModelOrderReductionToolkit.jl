@@ -96,5 +96,8 @@ export output_type
 export reachability_gramian
 export observability_gramian
 export H2_norm
+export H2_error
+export Hinf_norm
+export Hinf_error
 
 end

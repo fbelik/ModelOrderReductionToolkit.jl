@@ -18,6 +18,9 @@ poles_and_vectors
 observability_gramian
 reachability_gramian
 H2_norm
+H2_error
+Hinf_norm
+Hinf_error
 ```
 
 ### Reductors

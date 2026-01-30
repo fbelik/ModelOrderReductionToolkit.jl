@@ -70,10 +70,19 @@ end
 
 @testset "LTIModel" begin
     model = ParameterizedPenzlModel(100)
-    r = 20; ERR_TOL = 1e-2
+    r = 20; ERR_TOL = 1e-4
     p0 = zeros(3)
     # Balanced truncation
-    bt_reductor = BTReductor(model, p0)
+    bt_reductor = BTReductor(model, p0, iterative=true)
+    rom = form_rom(bt_reductor, r)
+    omegas = 10.0 .^ range(-2,3,100)
+    bodeerr = abs.(bode(model, omegas, first=true) .- bode(rom, omegas, first=true))
+    hinferr = Hinf_error(model, rom, p0)
+    @test maximum(bodeerr) < ERR_TOL
+    @test hinferr < ERR_TOL
+    @test isapprox(hinferr, 2 * sum(bt_reductor.hs[(r+1):end]), rtol=0.05)
+    @test hinferr >= maximum(bodeerr)
+    bt_reductor = BTReductor(model, p0, iterative=false)
     rom = form_rom(bt_reductor, r)
     omegas = 10.0 .^ range(-2,3,100)
     bodeerr = abs.(bode(model, omegas, first=true) .- bode(rom, omegas, first=true))
@@ -81,14 +90,11 @@ end
     # IRKA
     irka_reductor = IRKAReductor(model, r, p0)
     rom = form_rom(irka_reductor)
-    bodeerr = abs.(bode(model, omegas, first=true) .- bode(rom, omegas, first=true))
-    @test maximum(bodeerr) < ERR_TOL
+    @test H2_error(rom, model, p0) < ERR_TOL
     # SISO IRKA
     irka_reductor = SISOIRKAReductor(model, r, p0)
     rom = form_rom(irka_reductor, r)
-    omegas = range(-500,500,1001)
-    bodeerr = abs.(bode(model, omegas, first=true) .- bode(rom, omegas, first=true))
-    @test maximum(bodeerr) < ERR_TOL
+    @test H2_error(model, rom, p0) < ERR_TOL
     # POD RB Method
     freq_model = to_frequency_domain(model)
     params = [[ω,i,j,k] for ω in 10.0 .^ range(-2,3,50) for i in range(-40,40,5) for j in range(-40,40,5) for k in range(-40,40,5)]
@@ -96,32 +102,21 @@ end
     add_to_rb!(pod_reductor, params)
     rom = galerkin_project(model, Matrix(pod_reductor.V[:,1:r]))
     for p in [[0,0,0],[0,0,50],[40,-40,0],[10,15,-15]]
-        bodeerr = abs.(bode(model, omegas, p, first=true) .- bode(rom, omegas, p, first=true))
-        @test maximum(bodeerr) < ERR_TOL
+        @test H2_error(model, rom, p) < ERR_TOL
     end
     # SG RB Method
     sg_reductor = SGReductor(freq_model, force_rb_real=true)
     add_to_rb!(sg_reductor, pod_reductor.snapshots)
     rom = galerkin_project(model, Matrix(sg_reductor.V[:,1:r]))
     for p in [[0,0,0],[0,0,50],[40,-40,0],[10,15,-15]]
-        bodeerr = abs.(bode(model, omegas, p, first=true) .- bode(rom, omegas, p, first=true))
-        @test maximum(bodeerr) < ERR_TOL
+        @test H2_error(model, rom, p) < ERR_TOL
     end
     # WG RB Method
     estimator = StabilityResidualErrorEstimator(freq_model, p -> 1.0)
     wg_reductor = WGReductor(freq_model, estimator, force_rb_real=true)
     add_to_rb!(wg_reductor, params, div(r,2))
     rom = galerkin_project(model, Matrix(wg_reductor.V[:,1:r]))
-    omegas = 10.0 .^ range(-2,3,1000)
     for p in [[0,0,0],[0,0,50],[40,-40,0],[10,15,-15]]
-        bodeerr = abs.(bode(model, omegas, p, first=true) .- bode(rom, omegas, p, first=true))
-        @test maximum(bodeerr) < ERR_TOL
+        @test H2_error(model, rom, p) < ERR_TOL
     end
-    # Test difference of LTI systems and H2 error
-    err_system = model - rom
-    for p in [[0,0,0],[0,0,50],[40,-40,0],[10,15,-15]]
-        @test H2_norm(err_system, p, iterative=true) <= 1e-4
-        @test H2_norm(err_system, p, iterative=false) <= 1e-4
-    end
-    
 end

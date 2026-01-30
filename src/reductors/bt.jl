@@ -146,6 +146,102 @@ function H2_norm(model::LTIModel, p=nothing; withP=true, kwargs...)
 end
 
 """
+`H2_error(m1::LTIModel, m2::LTIModel[, p=nothing; withP=true, kwargs...])`
+
+Forms a `BTReductor` and computes the ``\\mathcal{H}_2`` norm of the 
+difference between the models. See `BTReductor` for kwargs.
+"""
+function H2_error(m1::LTIModel, m2::LTIModel, p=nothing; withP=true, kwargs...)
+    diff = m1 - m2
+    if !isnothing(p)
+        diff(p)
+    end
+    return H2_norm(diff, p, withP=withP; kwargs...)
+end
+
+"""
+`Hinf_norm(reductor::BTReductor[, max_iter=100, imag_tol=1e-4, real_tol=1e-4, reltol=1e-2, noise=0])`
+
+Uses the bisection method to compute the `\\mathcal{H}_\\infty`` norm of the
+model `reductor.model`. See the following reference.
+
+https://web.stanford.edu/~boyd/papers/pdf/bisection_hinfty.pdf
+"""
+function Hinf_norm(reductor::BTReductor; max_iter=100, imag_tol=1e-4, real_tol=1e-4, reltol=1e-2, noise=0)
+    model = reductor.model
+    E = (isa(model.E, UniformScaling) || !issparse(model.E)) ? model.E : Matrix(model.E)
+    A = E \ model.A
+    B = model.B
+    C = model.C
+    D = model.D
+    sdmax = svd(reductor.model.D).S[1]
+    γlb = max(sdmax, reductor.hs[1])
+    γub = sdmax + 2 * sum(reductor.hs)
+    for iter in 1:max_iter
+        γ = (γlb + γub) / 2
+        if noise >= 1
+            @printf("Iteration %d: Bisecting (%.4e,%.4e)\n", iter, γlb, γub)
+        end
+        if γub - γlb <= 2 * reltol * γlb
+            return γ
+        end
+        Mγ = begin
+            if iszero(D)
+                [A      (B*B' ./ γ) ;
+                (-C'C ./ γ)  -A']
+            else
+                [A       0.0.*A ;
+                0.0.*A  -A'] .+ 
+                [B    spzeros(size(B,1),size(C,1)) ;
+                spzeros(size(B,2),size(C,2))  -C'] * 
+                [-D γ*I ;
+                γ*I -D'] \
+                [C    spzeros(size(C,1),size(B,1)) ;
+                spzeros(size(B,1),size(C,1))  B']
+            end
+        end
+        Λ = eigen(Matrix(Mγ)).values
+        if any(abs.(imag.(Λ)) .> imag_tol .&& abs.(real.(Λ)) .< real_tol)
+            γlb = γ
+        else
+            γub = γ
+        end
+    end
+    if noise >= 1
+        println("Did not converge in $max_iter iterations")
+    end
+    return (γlb + γub) / 2
+end
+
+"""
+`Hinf_norm(model::LTIModel[, p=nothing; kwargs...])`
+
+Forms a `BTReductor` and computes the ``\\mathcal{H}_\\infty`` norm of the 
+`model`. See `BTReductor` and `Hinf_norm` for kwargs.
+"""
+function Hinf_norm(model::LTIModel, p=nothing; max_iter=100, imag_tol=1e-4, real_tol=1e-4, reltol=1e-2, noise=0, kwargs...)
+    reductor = BTReductor(model, p; noise=noise, kwargs...)
+    return Hinf_norm(reductor, max_iter=max_iter, imag_tol=imag_tol, 
+                     real_tol=real_tol, reltol=reltol, noise=noise)
+end
+
+"""
+`Hinf_error(m1::LTIModel, m2::LTIModel[, p=nothing; kwargs...])`
+
+Forms a `BTReductor` and computes the ``\\mathcal{H}_\\infty`` norm of the 
+difference `m1 - m2`. See `BTReductor` and `Hinf_norm` for kwargs.
+
+https://web.stanford.edu/~boyd/papers/pdf/bisection_hinfty.pdf
+"""
+function Hinf_error(m1::LTIModel, m2::LTIModel, p=nothing; kwargs...)
+    diff = m1 - m2
+    if !isnothing(p)
+        diff(p)
+    end
+    return Hinf_norm(diff, p; kwargs...)
+end
+
+"""
 `form_rom(bt_reductor[, r=-1])`
 
 Uses Petrov-Galerkin on the model to form a ROM
