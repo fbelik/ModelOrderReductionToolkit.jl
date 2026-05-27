@@ -39,7 +39,7 @@ struct VectorOfVectors{T} <: AbstractMatrix{T}
         end
         nrows = length(vecs[1])
         for vec in vecs[2:end]
-            if length(vec[i]) != nrows
+            if length(vec) != nrows
                 error("Each column must have the same number of elements")
             end
         end

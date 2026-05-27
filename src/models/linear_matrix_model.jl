@@ -75,7 +75,7 @@ function Base.show(io::Core.IO, model::LinearMatrixModel{NOUT}) where NOUT
     end
 end
 
-function (model::LinearMatrixModel{NOUT})(p, i::Int=1) where NOUT
+function initialize!(model::LinearMatrixModel{NOUT}, p, i::Int=1) where NOUT
     if model.p_last != p
         formArray!(model.Ap, model.A_alloc, p)
         model.fA = factorize(model.A_alloc)
@@ -85,10 +85,18 @@ function (model::LinearMatrixModel{NOUT})(p, i::Int=1) where NOUT
         for j in 1:NOUT
             formArray!(model.bps[j], view(model.B_alloc, :, j), p)
         end
-        return model.fA \ model.B_alloc
+    else
+        formArray!(model.bps[i], model.b_alloc, p)
     end
-    formArray!(model.bps[i], model.b_alloc, p)
-    return model.fA \ model.b_alloc
+end
+
+function (model::LinearMatrixModel{NOUT})(p, i::Int=1) where NOUT
+    initialize!(model, p, i)
+    if i == 0
+        return model.fA \ model.B_alloc
+    else
+        return model.fA \ model.b_alloc
+    end
 end
 
 function output_length(model::LinearMatrixModel)
@@ -181,7 +189,7 @@ function galerkin_add!(rom::LinearMatrixModel{NOUT}, fom::LinearMatrixModel, v::
             push!(br, (w' * b)...)
         end
     end
-    push!(rom.b_alloc, (w' * fom.b_alloc)...)
+    append!(rom.b_alloc, zeros(eltype(rom.b_alloc), radd))
     # Update rom.B_alloc
     if isa(rom.B_alloc, VectorOfVectors)
         for i in 1:size(w, 2)
@@ -190,5 +198,7 @@ function galerkin_add!(rom::LinearMatrixModel{NOUT}, fom::LinearMatrixModel, v::
     else
         rom.B_alloc = VectorOfVectors(Matrix{eltype(rom.B_alloc)}(undef, length(rom.b_alloc), length(rom.bps)))
     end
+    rom.fA = nothing
+    rom.p_last = nothing
     nothing
 end

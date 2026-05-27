@@ -38,9 +38,13 @@ function Base.show(io::Core.IO, model::LinearModel)
     print(io, model.bp)
 end
 
-function (model::LinearModel)(p, i::Int=1)
+function initialize!(model::LinearModel, p)
     formArray!(model.Ap, model.A_alloc, p)
     formArray!(model.bp, model.b_alloc, p)
+end
+
+function (model::LinearModel)(p, i::Int=1)
+    initialize!(model, p)
     return model.A_alloc \ model.b_alloc
 end
 
@@ -129,6 +133,6 @@ function galerkin_add!(rom::LinearModel, fom::LinearModel, v::AbstractVecOrMat, 
     for (b,br) in zip(fom.bp.arrays, rom.bp.arrays)
         push!(br, (w' * b)...)
     end
-    push!(rom.b_alloc, (w' * fom.b_alloc)...)
+    append!(rom.b_alloc, zeros(eltype(rom.b_alloc), radd))
     nothing
 end

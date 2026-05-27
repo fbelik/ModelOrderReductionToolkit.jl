@@ -125,3 +125,47 @@ end
         @test H2_error(model, rom, p) < ERR_TOL
     end
 end
+
+@testset "FengBennerErrorEstimator" begin
+    A = [-1.0 0.0 0.0; 0.0 -2.0 0.0; 0.0 0.0 -3.0]
+    B = [1.0 0.5; 0.2 1.0; 0.3 -0.4]
+    C = [1.0 0.1 0.2; -0.3 0.4 1.0]
+    model = LTIModel(A, B, C)
+    omega = 1.7
+
+    # Test transfer_primal_model and bode
+    tf_model = transfer_primal_model(model)
+    X = Matrix(tf_model([omega], 0))
+    @test norm(C * X + model.D - bode(model, omega; first=false)) < 1e-13    
+
+    V = [1.0; 0.0; 0.0;;]
+    full_basis = Matrix(I, 3, 3)
+    estimator = FengBennerErrorEstimator(model; V=V, Vdu=full_basis, Vrdu=full_basis)
+    components = estimate_components(estimator, omega; input=1, output=1)
+    rom = galerkin_project(model, V)
+    truth = abs((bode(model, omega; first=false) - bode(rom, omega; first=false))[1, 1])
+    y_du = dual_snapshot(estimator, omega; output=1)
+    Q = im * omega * model.E - model.A
+    @test norm(adjoint(Q) * y_du - conj.(vec(C[1:1, :]))) < 1e-13
+    @test components.residual_dual < 1e-13
+    @test components.total ≈ truth atol=1e-13
+
+    incremental = FengBennerErrorEstimator(model)
+    add_primal_basis!(incremental, ComplexF64[1.0, 0.0, 0.0])
+    _ = incremental.primal_rom(omega, 1)
+    add_primal_basis!(incremental, ComplexF64[0.0, 1.0, 0.0])
+    z_incremental = incremental.primal_rom(omega, 1)
+    z_rebuilt = galerkin_project(incremental.primal_model, incremental.V)([omega], 1)
+    @test length(z_incremental) == 2
+    @test z_incremental ≈ z_rebuilt atol=1e-13
+
+    pmodel = ParameterizedPenzlModel(10)
+    p = [0.1, -0.2, 0.3]
+    ptf_model = transfer_primal_model(pmodel)
+    pX = Matrix(ptf_model(vcat([omega], p), 0))
+    pmodel(p)
+    @test norm(pmodel.C * pX + pmodel.D - bode(pmodel, omega, p; first=false)) < 1e-13
+
+    red = FengBennerGreedyReductor(model, collect(10.0 .^ range(-2, 2, 6)); force_rb_real=true)
+    @test add_to_rb!(red; maxiter=1)
+end

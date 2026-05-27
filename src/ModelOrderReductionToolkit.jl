@@ -32,6 +32,8 @@ include("reductors/strong_greedy.jl")
 include("reductors/weak_greedy.jl")
 include("reductors/bt.jl")
 include("reductors/irka.jl")
+include("reductors/feng_benner_estimator.jl")
+include("reductors/feng_benner_greedy.jl")
 # Linear Algebra exports
 export svd
 export qr
@@ -99,5 +101,21 @@ export H2_norm
 export H2_error
 export Hinf_norm
 export Hinf_error
+# Feng Benner transfer function estimator
+export PrimalDualErrorEstimator
+export FengBennerErrorComponents
+export FengBennerErrorEstimator
+export FengBennerGreedyReductor
+export transfer_primal_model
+export transfer_dual_model
+export primal_snapshot
+export dual_snapshot
+export residual_dual_snapshot
+export add_primal_basis!
+export add_dual_basis!
+export add_residual_dual_basis!
+export rebuild_estimator!
+export estimate, estimate_all, estimate_components, worst_estimate
+export true_transfer_error
 
 end

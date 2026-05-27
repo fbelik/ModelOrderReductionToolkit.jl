@@ -173,7 +173,7 @@ function add_to_rb!(wg_reductor::WGReductor{NOUT}, params::AbstractVector; noise
             end
         end
     end
-    if max_p == nothing
+    if isnothing(max_p)
         if noise >= 1
             println("($k) No new parameters with non-null error encountered, not adding snapshot")
         end

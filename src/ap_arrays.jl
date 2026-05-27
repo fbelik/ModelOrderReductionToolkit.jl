@@ -39,6 +39,21 @@ function Base.show(io::Core.IO, aparr::APArray)
     print(io, res)
 end
 
+function Base.transpose(aparr::APArray)
+    # Transpose each array individually
+    return APArray([transpose(arr) for arr in aparr.arrays], aparr.makeθi, aparr.precompθ)
+end
+
+function Base.adjoint(aparr::APArray)
+    # Adjoint each array individually and outputs of aparr.makeθi
+    arrays = [copy(adjoint(arr)) for arr in aparr.arrays]
+    if aparr.precompθ
+        return APArray(arrays, p -> conj.(aparr.makeθi(p)), true)
+    else
+        return APArray(arrays, (p, i) -> conj(aparr.makeθi(p, i)))
+    end
+end
+
 """
 `formArray!(aparr, arr, p)`
 

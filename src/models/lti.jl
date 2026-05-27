@@ -57,6 +57,22 @@ function LTIModel(A_in::Union{AbstractMatrix,APArray},
     return LTIModel(arrs..., aparrs...)
 end
 
+function Base.adjoint(m::LTIModel)
+    to_adj(x) = isnothing(x) ? nothing : adjoint(x)
+    return LTIModel(
+        copy(adjoint(m.A)),
+        copy(adjoint(m.C)),
+        copy(adjoint(m.B)),
+        copy(adjoint(m.D)),
+        copy(adjoint(m.E)),
+        to_adj(m.Ap),
+        to_adj(m.Cp),
+        to_adj(m.Bp),
+        to_adj(m.Dp),
+        to_adj(m.Ep),
+    )
+end
+
 import Base: -
 
 function -(m1::LTIModel, m2::LTIModel)
@@ -321,34 +337,36 @@ function is_parameterized(model::LTIModel)
 end
 
 """
-`bode(model::LTIModel, ω::Real[, p=nothing; first=true])`
+`bode(model::LTIModel, ω::Real[, p=nothing; first=true, useD=true])`
 
 Returns the transfer function evaluated at `s=im*ω`,
 `C * (sE - A)^(-1) B + D`, evaluated at the `[1,1]` entry if `first==true`.
+If `useD=false`, sets `D=0`.
 """
-function bode(model::LTIModel, ω::Real, p=nothing; first=true)
+function bode(model::LTIModel, ω::Real, p=nothing; first=true, useD=true)
     if !isnothing(p)
         model(p)
     end
     s = ω*im
+    D = useD ? model.D : 0
     res = begin
         if issparse(model.B)
             if issparse(model.C)
                 if size(model.B, 2) <= size(model.C, 1)
-                    model.C * ((s*model.E - model.A) \ collect(model.B)) .+ model.D
+                    model.C * ((s*model.E - model.A) \ collect(model.B)) .+ D
                 else
-                    (collect(model.C) / (s*model.E - model.A)) * model.B .+ model.D
+                    (collect(model.C) / (s*model.E - model.A)) * model.B .+ D
                 end
             else
-                (model.C / (s*model.E - model.A)) * model.B .+ model.D
+                (model.C / (s*model.E - model.A)) * model.B .+ D
             end
         elseif issparse(model.C)
-            model.C * ((s*model.E - model.A) \ model.B) .+ model.D
+            model.C * ((s*model.E - model.A) \ model.B) .+ D
         else
             if size(model.B, 2) <= size(model.C, 1)
-                model.C * ((s*model.E - model.A) \ model.B) .+ model.D
+                model.C * ((s*model.E - model.A) \ model.B) .+ D
             else
-                (model.C / (s*model.E - model.A)) * model.B .+ model.D
+                (model.C / (s*model.E - model.A)) * model.B .+ D
             end
         end
     end
@@ -360,16 +378,17 @@ function bode(model::LTIModel, ω::Real, p=nothing; first=true)
 end
 
 """
-`bode(model::LTIModel, ωs::AbstractVector{<:Union{AbstractVector,Real}}[, p=nothing; first=true])`
+`bode(model::LTIModel, ωs::AbstractVector{<:Union{AbstractVector,Real}}[, p=nothing; first=true, useD=true])`
 
 Returns the transfer function evaluated at `s=im*ω`
 for `ω in ωs`, evaluated at the `[1,1]` entry if `first==true`.
+If `useD=false`, sets `D=0`.
 """
-function bode(model::LTIModel, ωs::AbstractVector{<:Union{AbstractVector,Real}}, p=nothing; first=true)
+function bode(model::LTIModel, ωs::AbstractVector{<:Union{AbstractVector,Real}}, p=nothing; first=true, useD=true)
     if !isnothing(p)
         model(p)
     end
-    return [bode(model, ω[1], first=first) for ω in ωs]
+    return [bode(model, ω[1]; first, useD) for ω in ωs]
 end
 
 """
@@ -447,7 +466,7 @@ function to_frequency_domain(model::LTIModel, logfreq=false) # TODO: Add Re(s) !
             else
                 [im .* model.E]
             end
-            APArray(arrs, i -> scale(p[1]))
+            APArray(arrs, (p, i) -> scale(p[1]))
         else
             APArray(im .* model.Ep.arrays, model.Ep.makeθi)
         end
