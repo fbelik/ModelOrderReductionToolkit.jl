@@ -154,3 +154,22 @@ function removeCol!(vov::VOV{T}) where T
     vov.size[2] -= 1
     nothing
 end
+
+# y = α V x + β y
+function LinearAlgebra.mul!(y::S, V::VOV{T}, x::S, α::Number, β::Number) where {T, S <: AbstractVector}
+    y .*= β
+    for i in eachindex(V.vecs)
+        axpy!(α * x[i], V.vecs[i], y)
+    end
+    return y
+end
+
+# y = α V' x + β y
+function LinearAlgebra.mul!(y::S, Vadj::Adjoint{T,VOV{T}}, x::S, α::Number, β::Number) where {T, S <: AbstractVector}
+    V = Vadj.parent
+    y .*= β
+    for i in eachindex(V.vecs)
+        y[i] += α * dot(V.vecs[i], x)
+    end
+    return y
+end
