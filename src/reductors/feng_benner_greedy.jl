@@ -41,7 +41,9 @@ Keyword arguments:
 """
 function FengBennerGreedyReductor(
     model::LTIModel,
-    samples::AbstractVector;
+    samples::AbstractVector,
+    primal_model::Union{Nothing,LinearMatrixModel}=nothing,
+    dual_model::Union{Nothing,LinearMatrixModel}=nothing;
     force_rb_real::Bool=false,
     logfreq::Bool=false,
     directions::Symbol=:worst_pair,
@@ -54,7 +56,7 @@ function FengBennerGreedyReductor(
     length(samples) > 0 || error("samples must be nonempty")
     directions in (:worst_pair, :all) || error("directions must be :worst_pair or :all")
 
-    estimator = FengBennerErrorEstimator(model; force_rb_real=force_rb_real, logfreq=logfreq)
+    estimator = FengBennerErrorEstimator(model, primal_model, dual_model; force_rb_real, logfreq)
     red = FengBennerGreedyReductor(
         model,
         samples,

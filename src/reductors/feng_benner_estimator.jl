@@ -21,35 +21,41 @@ mutable struct FengBennerErrorEstimator <: PrimalDualErrorEstimator
     logfreq::Bool
 
     function FengBennerErrorEstimator(
-        model::LTIModel;
-        V=nothing,
-        Vdu=nothing,
-        Vrdu=nothing,
-        force_rb_real::Bool=false,
-        logfreq::Bool=false,
-        primal_model::Union{LinearMatrixModel,Nothing}=nothing,
-        dual_model::Union{LinearMatrixModel,Nothing}=nothing,
+        model::LTIModel,
+        primal_model::Union{Nothing,LinearMatrixModel}=nothing,
+        dual_model::Union{Nothing,LinearMatrixModel}=nothing;
+        V::Union{Nothing,AbstractMatrix}=nothing,
+        Vdu::Union{Nothing,AbstractMatrix}=nothing,
+        Vrdu::Union{Nothing,AbstractMatrix}=nothing,
+        force_rb_real=false,
+        logfreq=false
     )
         n = size(model.A, 1)
-        T = _transfer_basis_type(model, force_rb_real)
+
+        T = promote_type(
+            Float64,
+            eltype(model.A),
+            eltype(model.B),
+            eltype(model.C),
+            eltype(model.D),
+        )
+        T = force_rb_real ? real(T) : complex(T)
         Vv = _transfer_basis_as_vov(V, n, T, "V")
         Vduv = _transfer_basis_as_vov(Vdu, n, T, "Vdu")
         Vrduv = _transfer_basis_as_vov(Vrdu, n, T, "Vrdu")
 
-        primal = isnothing(primal_model) ? transfer_primal_model(model; logfreq) : primal_model
-        dual = isnothing(dual_model) ? transfer_dual_model(model; logfreq) : dual_model
+        primal_model = isnothing(primal_model) ? to_frequency_domain(model, logfreq) : primal_model
+        dual_model = isnothing(dual_model) ? to_frequency_domain(adjoint(model), logfreq) : dual_model
 
         return new(
             model,
-            primal,
-            dual,
-            Vv,
-            Vduv,
-            Vrduv,
-            galerkin_project(primal, Vv),
-            galerkin_project(dual, Vduv),
-            galerkin_project(dual, Vrduv),
-            logfreq,
+            primal_model,
+            dual_model,
+            Vv, Vduv, Vrduv,
+            galerkin_project(primal_model, Vv),
+            galerkin_project(dual_model, Vduv),
+            galerkin_project(dual_model, Vrduv),
+            logfreq
         )
     end
 end
@@ -66,17 +72,6 @@ end
 # -----------------------------------------------------------------------------
 # Sample and type handling
 # -----------------------------------------------------------------------------
-
-function _transfer_basis_type(model::LTIModel, force_rb_real::Bool)
-    T = promote_type(
-        Float64,
-        eltype(model.A),
-        eltype(model.B),
-        eltype(model.C),
-        eltype(model.D),
-    )
-    return force_rb_real ? real(T) : complex(T)
-end
 
 function _transfer_basis_as_vov(V, n::Int, ::Type{T}, name::AbstractString) where T
     if isnothing(V)
@@ -100,21 +95,6 @@ function _transfer_parameter(sample)
     end
     sample isa AbstractVector && return sample
     return collect(sample)
-end
-
-# -----------------------------------------------------------------------------
-# Frequency-domain LinearMatrixModels
-# -----------------------------------------------------------------------------
-
-function transfer_primal_model(model::LTIModel; logfreq::Bool=false)
-    return to_frequency_domain(model, logfreq)
-end
-
-function transfer_dual_model(
-    model::LTIModel,
-    logfreq::Bool=false,
-)
-    return to_frequency_domain(adjoint(model), logfreq)
 end
 
 # -----------------------------------------------------------------------------
