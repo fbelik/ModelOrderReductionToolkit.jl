@@ -27,10 +27,9 @@ DescriptorSystems = "a81e2ce2-54d1-11eb-2c75-db236b00f339"
 OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
 
 [extensions]
-ODEExt = "OrdinaryDiffEq"
 ControlSystemsExt = "ControlSystems"
 DescriptorSystemsExt = "DescriptorSystems"
-
+ODEExt = "OrdinaryDiffEq"
 
 [compat]
 ArnoldiMethod = "0.4.0"
@@ -45,7 +44,7 @@ LinearMaps = "3.11.4"
 MathOptInterface = "1.42.0"
 MatrixEquations = "2.4"
 NearestNeighbors = "0.4.0"
-OrdinaryDiffEq = "6.0"
+OrdinaryDiffEq = "6.0, 7"
 Printf = "1"
 ProgressBars = "1.5"
 SparseArrays = "1.9"
